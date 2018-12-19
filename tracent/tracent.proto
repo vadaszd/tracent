@@ -1,0 +1,94 @@
+syntax="proto3";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+package tracent.oob;
+
+
+message TracingInfo {
+  uint32                    partition_number  = 1;
+  repeated TraceFragment    trace_fragments   = 2;
+  repeated ExecutionUnit    execution_units   = 3;
+  repeated string           strings           = 4;
+  int32                     num_strings       = 5;
+}
+
+
+message TraceFragment {
+  TraceId                   trace_id          = 1;
+  fixed64                   execution_unit_id = 2;
+  google.protobuf.Timestamp time_reference    = 3;
+  repeated Event            events            = 4;
+}
+
+
+message TraceId {
+  fixed64                   high              = 1;
+  fixed64                   low               = 2;
+}
+
+
+message ExecutionUnit {
+  fixed64                   id                = 1;
+
+  enum ExecutionUnitType {
+    UNKNOWN   = 0;
+    PROCESS   = 1;
+    THREAD    = 2;
+    COROUTINE = 3;
+  }
+  ExecutionUnitType         type              = 2;
+
+  repeated Tag              tags              = 3;
+}
+
+
+message Event {
+  uint64                    sequence_number   = 1;
+  google.protobuf.Duration  lag               = 2;
+
+  enum EventType {
+    CREATE_EU      = 0;
+    FINISH_EU      = 1;
+
+    OT_START_SPAN  = 10;
+    OT_LOG         = 11;
+    OT_GET_CONTEXT = 12;
+    OT_FINISH_SPAN = 13;
+  }
+  EventType                 event_type        = 3;
+
+  enum Status {
+    UNKNOWN = 0;
+    BUSY = 1;
+    IDLE = 2;
+  }
+  Status                    status            = 4;
+
+  repeated EventReference   causing_events    = 5;
+  repeated Tag              tags              = 6;
+}
+
+
+message EventReference {
+  TraceId                   trace_id          = 1;
+  fixed64                   event_hash        = 2;
+}
+
+
+message Value {
+}
+
+
+message Tag {
+  uint32                    key_alias          = 1;
+
+  oneof value {
+    double                  float_value        = 2;
+    int64                   int_value          = 3;
+    bool                    boolean_value      = 4;
+    uint32                  string_alias_value = 5;
+    bytes                   bytes_value        = 6;
+  }
+}
