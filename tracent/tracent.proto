@@ -6,12 +6,15 @@ import "google/protobuf/duration.proto";
 package tracent.oob;
 
 
+message RoutingInfo {
+  bytes                     routing_key       = 1;
+}
+
+
 message TracingInfo {
-  uint32                    partition_number  = 1;
+  bytes                     routing_key       = 1;
   repeated TraceFragment    trace_fragments   = 2;
   repeated ExecutionUnit    execution_units   = 3;
-  repeated string           strings           = 4;
-  int32                     num_strings       = 5;
 }
 
 
@@ -41,12 +44,19 @@ message ExecutionUnit {
   ExecutionUnitType         type              = 2;
 
   repeated Tag              tags              = 3;
+  repeated string           strings           = 4;
+  int32                     num_strings       = 5;
 }
 
 
 message Event {
   uint64                    sequence_number   = 1;
-  google.protobuf.Duration  lag               = 2;
+
+  // Save cc. 4 bytes by storing the difference to TraceFragment.time_reference
+  // A Timestamp since epoch-start could be stored in cc. 12 bytes,
+  // a few second duration in cc 8 bytes.
+  // Makes sense if on average a fragment contains more than 1 events.
+  google.protobuf.Duration  timestamp         = 2;
 
   enum EventType {
     CREATE_EU      = 0;
@@ -74,10 +84,6 @@ message Event {
 message EventReference {
   TraceId                   trace_id          = 1;
   fixed64                   event_hash        = 2;
-}
-
-
-message Value {
 }
 
 
