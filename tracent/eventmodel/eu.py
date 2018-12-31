@@ -1,10 +1,11 @@
 import uuid
 import random
-from itertool import count
+from itertools import count
 from abc import ABC
 from collections import namedtuple
+from typing import Dict, Tuple, List
 
-from fnvhash import fnv1a_64
+from fnvhash import fnv1a_64, fnv1a_32
 
 from . import tracent_pb2 as pb
 
@@ -13,10 +14,10 @@ TraceContext = namedtuple("TraceContext", ["traceID", "eventId"])
 
 class ExecutionUnit(object):
 
-    def __init__(self, euType, **kwargs):
+    def __init__(self, euType: int, **kwargs):
         self.id = random.getrandbits(64)
         self.eventSequenceNbr = self.nextEventSequenceNbr = None
-        self._generateNextEventId = _initEventNumbering()
+        self._generateNextEventId = self._initEventNumbering()
         self._generateNextEventId()
 
         self.traceBuilder = globalTraceBuilder
@@ -26,11 +27,11 @@ class ExecutionUnit(object):
 
         self.traceBuilder.addEvent(
             self.traceId, self.id, self.nextEventSequenceNbr,
-            self.eventType=pb.Event.CREATE_EU,
+            eventType=pb.Event.CREATE_EU,
             causingTraceId=None, causingEventId=None, tags=dict())
         self._generateNextEventId()
 
-    def _initEventNumbering(self):
+    def _initEventNumbering(self) -> NoneTye:
         eventSequenceNumber = count(0)
 
         def _generateNextEventId(self):
@@ -42,8 +43,10 @@ class ExecutionUnit(object):
 
         return _generateNextEventId
 
-    def tracePoint(self, eventType, status, causingContext=None,
-                   switchTrace=True, **tags):
+    def tracePoint(self, eventType: int, status: int,
+                   causingContext: TraceContext = None,
+                   switchTrace: bool = True, **tags
+                   ):
         if causingContext is None:
             causingTraceId = None
             causingEventId = None
@@ -109,14 +112,14 @@ class AbstractTraceBuilder(ABC):
     """
 
     @abstractmethod
-    def startEU(self, euId, euType, tags):
+    def startEU(self, euId: int, euType: int, tags: dict):
         """ Register a new EU with the trace builder
 
             Events can only be added to registered EUs.
         """
 
     @abstractmethod
-    def finishEU(self, euId):
+    def finishEU(self, euId: int):
         """  Unregister an EU
 
             Registered EUs occupy resources, therefore must be cleand up
@@ -124,25 +127,48 @@ class AbstractTraceBuilder(ABC):
         """
 
     @abstractmethod
-    def startTrace(self, euId, traceId): pass
+    def startTrace(self, euId: int, traceId: byte): pass
 
     @abstractmethod
-    def addEvent(self, traceId, euId, sequence_number, eventType, status,
-                 causingTraceId, causingEventId, **tags):
-        """ @return The TracingContext referring to the just created event.
+    def addEvent(self, traceId: byte, euId: int, sequence_number: int,
+                 eventType: int, status: int,
+                 causingTraceId: byte, causingEventId: byte, tags: dict):
+        """
         """
 
     @abstractmethod
-    def addTag(self, euId, eventSequenceNbr, **tags):
+    def addTag(self, euId: int, eventSequenceNbr: byte, tags: dict):
         """ Attach the tags to the given event, overriding conflicting tags.
         """
 
     @abstractmethod
-    def finishTrace(self, executionUnit): pass
+    def finishTrace(self, euId: int): pass
 
 
 
 class SimpleTraceBuilder(AbstractTraceBuilder):
+    """ A simple trace TraceBuilder
+
+        Build a new Payload PDU for every trace fragment
+        adding an ExecutionUnit PDU for the referred EU and
+        prefixing it with a Metadata PDU if there have been changes to the
+        string table since the last publication of it.
+
+        Cache an ExecutionUnit PDU and copy it to to the Payload
+
+    """
+
+    # stringTable: StringTable  # one global isinstance
+    # euPDUs: Dict[int, ]
+    # ExecutionUnit # one per EU, life-cycle is managed by startEU/finishEU
+    # TracingData  # one per EU, life-cycle is managed by startTrace/finishTrace
+    #     Payload
+    #         TraceFragment
+    #             Event
+    #         ExecutionUnit  # copied on finishTrace
+
+    def __init__(self):
+        self.stringTable = StringTable()
 
     def startEU(self, executionUnit):
         self.traceBuilder.startTrace(None)
@@ -173,13 +199,39 @@ class SimpleTraceBuilder(AbstractTraceBuilder):
                                      event_hash=causingEventHash)
 
         self.addTags(self.event.tags, tags, self.partitionNumber)
-        string alias in tag may be wrong!
+        # string alias in tag may be wrong!
 
     def finishTrace(self, executionUnit):
         self.addTraceFragment(self.partitionNumber,
                                           self.executionUnit,
                                           self.traceFragment)
 
+
+class StringTable(object):
+    """ Translate strings into probabilisticly unique aliases
+    """
+    stringByAlias: Dict[int, str]
+    aliasByString: Dict[str, int]
+
+    def __init__(self):
+        self.stringByAlias = dict()
+        self.aliasByString = dict()
+
+    def getAlias(string: str) -> int:
+        try:
+            alias = self.aliasByString[string]
+        except KeyError:
+            alias = fnv1a_32(string)
+            try:
+                conflictingString = self.stringByAlias[alias]
+            except KeyError:
+                self.stringByAlias[alias] = string
+                self.aliasByString[string] = alias
+            else:
+                raise ValueError("The fnv1a hash {} of the new string '{}' "
+                                 "collides with that of the existing string "
+                                 "{}".format(alias, string, conflictingString))
+        return alias
 
 globalTraceBuilder = SimpleTraceBuilder()
 

@@ -1,0 +1,221 @@
+syntax="proto3";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+package tracent.oob;
+
+
+message TracingData {
+
+  // This key can be used for partioning the OOB data stream.
+  // It  helps routing the trace fragments that belong (by some logic)
+  // together to the same destination. Currently two ways of using this key
+  // are foreseen:
+  //
+  //  - Populating it by the trace ID will bring together the fragments
+  //    of individual traces (trace-focused view)
+  //
+  //  - Doing the same with the EU ID will allow for an EU-centric view
+  //
+  // When the key is missing (or empty), the TracingData MUST be broadcast to
+  // all partitions.
+  // The key SHOULD be populated when sending RoutedData messages.
+  // It MUST NOT be populated when sending BroadcastData.
+  bytes                     routing_key       = 1;
+
+  // A randomly chosen, probabilisticly unique ID for the sender;
+  // it is used for disambiguating the string table under the rare condition
+  // that multiple senders generate the same alias for different strings.
+  // MUST be presenet.
+  fixed64                   sender_id         = 2;
+
+  // Every sender SHOULD send a BroadcastData message containing the mappings
+  // of the aliases it will use in its RoutedData messages to the strings they
+  // stand for. The BroadcastData defining the alias SHOULD be sent before the
+  // RoutedData referring to the alias.
+  oneof data {
+      RoutedData            routed_data       = 3;
+      BroadcastData         broadcast_data    = 4;
+  }
+}
+
+
+message TracingInfoHeader {
+  // Entities that merely forward and route (but do not otherwise process)
+  // a stream of TracingData MAY decode the elements of the stream as
+  // TracingInfoHeader messages. This message definition exposes only the
+  // information necessary to make routing decisions and will avoid the
+  // overhead of decoding the rest of the message, saving some CPU cycles.
+
+  // When the key is missing (or empty), the TracingInfoHeader MUST be
+  // broadcast to all partitions; otherwise only to the partition computed
+  // from the key.
+  bytes                     routing_key       = 1;
+}
+
+
+message RoutedData {
+  repeated TraceFragment    trace_fragments   = 1;
+
+  // MUST include here every EU referred
+  // to by any of the trace TraceFragments, unless the EU has recently
+  // been broadcast.
+  repeated ExecutionUnit    execution_units   = 2;
+}
+
+
+message BroadcastData {
+  // The goal of the string table is to reduce the number of repetitive strings
+  // in the stream of TraceData messages. The idea is to map frequent strings
+  // to 32-bit integer aliases and send these instead of the string.
+  //
+  // The broadcast of these mappings SHOULD be regularly repeated, so that
+  // they appear in the stream near to the trace fragments referring to them.
+  // The re-send frequecy should be balanced with the redundancy it introduces,
+  repeated StringTableEntry strings           = 1;
+
+  // The sender MAY broadcast here frequently referred to execution units,
+  // so that it does not have to repeatedly include them into RoutedData
+  // messages.
+  // The broadcast of in-use EUs SHOULD be regularly repeated, so that
+  // they appear in the stream near to the trace fragments referring to them.
+  // EUs no longer in use SHOULD NOT be repeatedly broadcast.
+  repeated ExecutionUnit    execution_units   = 2;
+}
+
+
+message StringTableEntry {
+  // Ideally, the assignmenet of alias values to strings would be
+  // deterministic, consistent over implementations and (at least
+  // probabilisticly) unambigous in both directions, so that on the
+  // receiver side the same mapping can be used to look up the string mapping
+  // to the alias, regardless of which sender the string originates from.
+  //
+  // By prescribing a good hash function as the way of generating the aliases
+  // on the sender side and rejecting to encode strings that would cause hash
+  // collisions, this goal can be met most of the time. Collisions are only
+  // possible on the receiver side, by two senders computing the same alias
+  // for different strings.
+  //
+  // We prescribe at the protocol level that
+  //  - The alias MUST be computed as the 32-bit FNV1a hash of the
+  //     UTF-8 encoded string.
+  //  - The sender MUST NOT encode strings the alias of which collide with the
+  //     alias of another string encoded earlier. If the sender detects a
+  //     a collision of aliases, then it MUST preserve the mapping to the
+  //     original string and the new (colliding) string MUST be sent without
+  //     replacing it with an alias.
+  //  - If a receiver detects that different senders generated the same alias
+  //     for different strings, it MUST disambiguate by the ID of the sender.
+  fixed32                   alias             = 1;
+  string                    value             = 2;
+}
+
+
+message TraceFragment {
+  TraceId                   trace_id          = 1;
+  fixed64                   execution_unit_id = 2;
+  google.protobuf.Timestamp time_reference    = 3;
+  repeated Event            events            = 4;
+}
+
+
+message TraceId {
+  fixed64                   high              = 1;
+  fixed64                   low               = 2;
+}
+
+
+message ExecutionUnit {
+  fixed64                   id                = 1;
+
+  enum ExecutionUnitType {
+    UNKNOWN   = 0;
+    PROCESS   = 1;
+    THREAD    = 2;
+    COROUTINE = 3;
+  }
+  ExecutionUnitType         type              = 2;
+
+  repeated Tag              tags              = 3;
+}
+
+
+message Event {
+  // Each event has an 64-bit ID, which is the FNV1a hash computed from the EU ID and
+  // sequence number. All info to recompute the event ID is present in the
+  // trace fragment, thus here we do not store the ID itself.
+  // The event ID is probabilisticly unique within the trace and within the EU.
+
+  uint64                    sequence_number   = 1;
+
+  // Save cc. 4 bytes by storing the difference to TraceFragment.time_reference
+  // A Timestamp since epoch-start could be stored in cc. 12 bytes,
+  // a few second duration in cc 8 bytes.
+  // Makes sense if on average a fragment contains more than 1 events.
+  google.protobuf.Duration  timestamp         = 2;
+
+  enum EventType {
+    CREATE_EU      = 0;
+    FINISH_EU      = 1;
+
+    OT_START_SPAN  = 10;
+    OT_LOG         = 11;
+    OT_GET_CONTEXT = 12;
+    OT_FINISH_SPAN = 13;
+  }
+  EventType                 event_type        = 3;
+
+  enum Status {
+    UNKNOWN = 0;
+    BUSY    = 1;
+    IDLE    = 2;
+  }
+  Status                    status            = 4;
+
+  repeated EventReference   causing_events    = 5;
+  repeated Tag              tags              = 6;
+}
+
+
+message EventReference {
+  // The sender MAY omit the trace ID if it is identical to
+  // TraceFragment.trace_id, i.e the trace ID of
+  // the trace fragment containing the event reference.
+  // If EventReference.trace_id is missing, then the receiver SHOULD use
+  // TraceFragment.trace_id of the containing fragment.
+  TraceId                   trace_id          = 1;
+
+  // Regarding the event ID, see the comments in the Event message.
+  fixed64                   event_id          = 2;
+}
+
+
+message Tag {
+
+  // Keys longer than 4 characters when encoded as UTF-8
+  // SHOULD be added to the string table and encoded using their alias in the
+  // alias_key field. Shorter keys SHOULD be sent in the string_key field.
+  // If no alias can be obtained for a string (due to hash collision),
+  // then the string has to be sent `as is` in the string_key field.
+  oneof key {
+    string                  string_key         = 1;
+    fixed32                 alias_key          = 2;
+  }
+
+  // Frequent, repeatedly used string values longer than 4
+  // characters when encoded as UTF-8 should be added to the
+  // string table and sent as their alias in the string_alias_value field.
+  // Shorter or rarely used string values or if no alias can be obtained for
+  // the string (due to hash collision) should be encoded as plain strings,
+  // even if they are long.
+  oneof value {
+    double                  float_value        = 3;
+    int64                   int_value          = 4;
+    bool                    boolean_value      = 5;
+    string                  string_value       = 6;
+    fixed32                 string_alias_value = 7;
+    bytes                   bytes_value        = 8;
+  }
+}
