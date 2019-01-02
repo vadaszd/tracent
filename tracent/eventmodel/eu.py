@@ -1,52 +1,75 @@
-import uuid
+from uuid import UUID, uuid1
 import random
+import struct
 from itertools import count
-from abc import ABC
+from abc import ABC, abstractmethod
 from collections import namedtuple
-from typing import Dict, Tuple, List
+from typing import Optional, Dict, Tuple, NamedTuple, List, Union, Callable
 
 from fnvhash import fnv1a_64, fnv1a_32
 
-from . import tracent_pb2 as pb
+from ..oob import tracent_pb2 as pb
 
-TraceContext = namedtuple("TraceContext", ["traceID", "eventId"])
+
+TagType = Union[bool, int, float, str, bytes]
+
+# class TraceId(object):
+#     hi: int
+#     lo: int
+#
+#     def __init__(self, traceId: int) -> None:
+#         self.lo = traceId & 0xFFFFFFFFFFFFFFFF
+#         self.hi = traceId >> 64
+
+
+class TraceContext(NamedTuple):
+    traceId: bytes
+    eventId: bytes
 
 
 class ExecutionUnit(object):
 
-    def __init__(self, euType: int, **kwargs):
+    eventSequenceNbr: int
+    traceId: UUID
+    traceBuilder: AbstractTraceBuilder
+
+    def __init__(self, euType: int, **tags: TagType) -> None:
         self.id = random.getrandbits(64)
-        self.eventSequenceNbr = self.nextEventSequenceNbr = None
+        self.eventSequenceNbr = -1   # This value is used nowhere
+        self.nextEventSequenceNbr = 0
         self._generateNextEventId = self._initEventNumbering()
         self._generateNextEventId()
 
         self.traceBuilder = globalTraceBuilder
         self.traceBuilder.startEU(self.id, euType, tags)
-        self.traceId = uuid.uuid1().int
-        self.traceBuilder.startTrace(self.traceId)
+        self.startNewTrace()
 
         self.traceBuilder.addEvent(
-            self.traceId, self.id, self.nextEventSequenceNbr,
-            eventType=pb.Event.CREATE_EU,
+            self.id, self.traceId, self.nextEventSequenceNbr,
+            eventType=pb.Event.CREATE_EU, status=pb.Event.BUSY,
             causingTraceId=None, causingEventId=None, tags=dict())
         self._generateNextEventId()
 
-    def _initEventNumbering(self) -> NoneTye:
-        eventSequenceNumber = count(0)
+    def _initEventNumbering(self) -> Callable[[], None]:
+        eventCounter = count(0)
 
-        def _generateNextEventId(self):
+        def _generateNextEventId() -> None:
             # Switch the actual event ID to the next event ID
             self.eventSequenceNbr = self.nextEventSequenceNbr
 
             # Generate a new number for the next event
-            self.nextEventSequenceNbr = next(self.eventSequenceNumber)
+            self.nextEventSequenceNbr = next(eventCounter)
 
         return _generateNextEventId
 
+    def startNewTrace(self) -> None:
+        self.traceId = uuid1()
+        self.traceBuilder.startTrace(self.id, self.traceId)
+
     def tracePoint(self, eventType: int, status: int,
-                   causingContext: TraceContext = None,
-                   switchTrace: bool = True, **tags
-                   ):
+                   causingContext: Optional[TraceContext] = None,
+                   switchTrace: bool = True, **tags: TagType
+                   ) -> None:
         if causingContext is None:
             causingTraceId = None
             causingEventId = None
@@ -54,42 +77,44 @@ class ExecutionUnit(object):
             causingTraceId = causingContext.traceId
             assert causingTraceId is not None
             if switchTrace and causingTraceId != self.traceId:
-                self.traceBuilder.finishTrace(self.traceId)
-                self.traceId = causingTraceId
-                self.traceBuilder.startTrace(self.traceId)
+                self.traceBuilder.finishTrace(self.id, self.traceId)
+                self.traceId = UUID(bytes=causingTraceId)
+                self.traceBuilder.startTrace(self.id, self.traceId)
             causingEventId = causingContext.eventId
 
         self.traceBuilder.addEvent(
-            self.traceId, self.id, self.nextEventSequenceNbr,
-            eventType, causingTraceId, causingEventId, tags)
+            self.id, self.traceId, self.nextEventSequenceNbr,
+            eventType, status, causingTraceId, causingEventId, tags)
         self._generateNextEventId()
 
-    def _getEventId(self, eventSequenceNbr):
+    def _getEventId(self, eventSequenceNbr:int) -> bytes:
         # Apply the fnv1a hash on the Little-endian encoding of the
         # (sequence number, eu-id) tuple
         eventIdInt = fnv1a_64(struct.pack(    # Little-endian encoding
                               "<QQ",  eventSequenceNbr, self.id))
         return struct.pack("<Q", eventIdInt)
 
-    def getTraceContext():
-        return TraceContext(self.traceId,
+    def getTraceContext(self) -> TraceContext:
+        return TraceContext(self.traceId.bytes,  # big endian
                             self._getEventId(self.eventSequenceNbr))
 
-    def peek():
-        return TraceContext(self.traceId,
+    def peek(self) -> TraceContext:
+        return TraceContext(self.traceId.bytes,  # big endian
                             self._getEventId(self.nextEventSequenceNbr))
 
-    def addTag(self, **tags):
+    def addTag(self, **tags: TagType) -> None:
         """ Add the key-value tags to the event most recently created on the EU
         """
-        self.traceBuilder.addTag(self.id, self.eventSequenceNbr, **tags)
+        self.traceBuilder.addTag(self.id,
+                                 self._getEventId(self.eventSequenceNbr),
+                                 tags)
 
-    def finish(self):
+    def finish(self) -> None:
         self.eventId = self.traceBuilder.addEvent(
-            self.traceId, self.id, next(self.eventSequenceNumber),
-            eventType=pb.Event.FINISH_EU,
+            self.id, self.traceId, self.nextEventSequenceNbr,
+            eventType=pb.Event.FINISH_EU, status=pb.Event.IDLE,
             causingTraceId=None, causingEventId=None, tags=dict())
-        self.traceBuilder.finishTrace(self.traceId)
+        self.traceBuilder.finishTrace(self.id, self.traceId)
         self.traceBuilder.finishEU(self.id)
 
 
@@ -112,14 +137,14 @@ class AbstractTraceBuilder(ABC):
     """
 
     @abstractmethod
-    def startEU(self, euId: int, euType: int, tags: dict):
+    def startEU(self, euId: int, euType: int, tags: Dict[str, TagType]) -> None:
         """ Register a new EU with the trace builder
 
             Events can only be added to registered EUs.
         """
 
     @abstractmethod
-    def finishEU(self, euId: int):
+    def finishEU(self, euId: int) -> None:
         """  Unregister an EU
 
             Registered EUs occupy resources, therefore must be cleand up
@@ -127,22 +152,25 @@ class AbstractTraceBuilder(ABC):
         """
 
     @abstractmethod
-    def startTrace(self, euId: int, traceId: byte): pass
+    def startTrace(self, euId: int, traceId: UUID) -> None: pass
 
     @abstractmethod
-    def addEvent(self, traceId: byte, euId: int, sequence_number: int,
+    def addEvent(self, euId: int, traceId: UUID, sequence_number: int,
                  eventType: int, status: int,
-                 causingTraceId: byte, causingEventId: byte, tags: dict):
+                 causingTraceId: Optional[bytes],
+                 causingEventId: Optional[bytes],
+                 tags: Dict[str, TagType]) -> None:
         """
         """
 
     @abstractmethod
-    def addTag(self, euId: int, eventSequenceNbr: byte, tags: dict):
+    def addTag(self, euId: int, eventSequenceNbr: bytes,
+               tags: Dict[str, TagType]) -> None:
         """ Attach the tags to the given event, overriding conflicting tags.
         """
 
     @abstractmethod
-    def finishTrace(self, euId: int): pass
+    def finishTrace(self, euId: int, traceId: UUID) -> None: pass
 
 
 
@@ -167,13 +195,13 @@ class SimpleTraceBuilder(AbstractTraceBuilder):
     #             Event
     #         ExecutionUnit  # copied on finishTrace
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.stringTable = StringTable()
 
-    def startEU(self, executionUnit):
+    def startEU(self, executionUnit) -> None:
         self.traceBuilder.startTrace(None)
 
-    def startTrace(self, executionUnit, traceId):
+    def startTrace(self, executionUnit, traceId: bytes) -> None:
         if traceId is None:
             traceId = uuid.uuid1().int
 
@@ -213,11 +241,11 @@ class StringTable(object):
     stringByAlias: Dict[int, str]
     aliasByString: Dict[str, int]
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.stringByAlias = dict()
         self.aliasByString = dict()
 
-    def getAlias(string: str) -> int:
+    def getAlias(self, string: str) -> int:
         try:
             alias = self.aliasByString[string]
         except KeyError:
@@ -233,7 +261,7 @@ class StringTable(object):
                                  "{}".format(alias, string, conflictingString))
         return alias
 
-globalTraceBuilder = SimpleTraceBuilder()
+globalTraceBuilder: AbstractTraceBuilder = SimpleTraceBuilder()
 
 
 class TraceBuffer(object):
