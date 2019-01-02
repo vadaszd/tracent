@@ -28,7 +28,7 @@ message TracingData {
   // it is used for disambiguating the string table under the rare condition
   // that multiple senders generate the same alias for different strings.
   // MUST be presenet.
-  fixed64                   sender_id         = 2;
+  bytes                     sender_id         = 2;
 
   // Every sender SHOULD send a BroadcastData message containing the mappings
   // of the aliases it will use in its RoutedData messages to the strings they
@@ -41,7 +41,7 @@ message TracingData {
 }
 
 
-message TracingInfoHeader {
+message TracingDataHeader {
   // Entities that merely forward and route (but do not otherwise process)
   // a stream of TracingData MAY decode the elements of the stream as
   // TracingInfoHeader messages. This message definition exposes only the
@@ -114,29 +114,23 @@ message StringTableEntry {
 
 
 message TraceFragment {
-  TraceId                   trace_id          = 1;
-  fixed64                   execution_unit_id = 2;
+  bytes                     trace_id          = 1;
+  bytes                     execution_unit_id = 2;
   google.protobuf.Timestamp time_reference    = 3;
   repeated Event            events            = 4;
 }
 
 
-message TraceId {
-  fixed64                   high              = 1;
-  fixed64                   low               = 2;
-}
-
-
 message ExecutionUnit {
-  fixed64                   id                = 1;
+  bytes                     id                = 1;
 
-  enum ExecutionUnitType {
+  enum Type {
     UNKNOWN   = 0;
     PROCESS   = 1;
     THREAD    = 2;
     COROUTINE = 3;
   }
-  ExecutionUnitType         type              = 2;
+  Type         type              = 2;
 
   repeated Tag              tags              = 3;
 }
@@ -156,7 +150,7 @@ message Event {
   // Makes sense if on average a fragment contains more than 1 events.
   google.protobuf.Duration  timestamp         = 2;
 
-  enum EventType {
+  enum Type {
     CREATE_EU      = 0;
     FINISH_EU      = 1;
 
@@ -165,7 +159,7 @@ message Event {
     OT_GET_CONTEXT = 12;
     OT_FINISH_SPAN = 13;
   }
-  EventType                 event_type        = 3;
+  Type                 event_type        = 3;
 
   enum Status {
     UNKNOWN = 0;
@@ -185,10 +179,10 @@ message EventReference {
   // the trace fragment containing the event reference.
   // If EventReference.trace_id is missing, then the receiver SHOULD use
   // TraceFragment.trace_id of the containing fragment.
-  TraceId                   trace_id          = 1;
+  bytes                     trace_id          = 1;
 
   // Regarding the event ID, see the comments in the Event message.
-  fixed64                   event_id          = 2;
+  bytes                     event_id          = 2;
 }
 
 
@@ -215,7 +209,7 @@ message Tag {
     int64                   int_value          = 4;
     bool                    boolean_value      = 5;
     string                  string_value       = 6;
-    fixed32                 string_alias_value = 7;
+    fixed32                 alias_value        = 7;
     bytes                   bytes_value        = 8;
   }
 }
