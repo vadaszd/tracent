@@ -28,16 +28,15 @@ class ExecutionUnit(object):
     traceId: UUID
     traceBuilder: AbstractTraceBuilder
 
-    def __init__(self, euType: pb.ExecutionUnit.Type, **tags: TagType) -> None:
+    def __init__(self, traceBuilder: AbstractTraceBuilder,
+                 euType: pb.ExecutionUnit.Type, **tags: TagType
+                 ) -> None:
         self.id = struct.pack("Q", random.getrandbits(64))
         self.eventSequenceNbr = -1   # This value is used nowhere
         self.nextEventSequenceNbr = 0
         self._generateNextEventId = self._initEventNumbering()
         self._generateNextEventId()
-
-        if globalTraceBuilder is None:
-            raise ValueError("Use setTraceBuilder(...) to set a trace builder")
-        self.traceBuilder = globalTraceBuilder
+        self.traceBuilder = traceBuilder
         self.traceBuilder.startEU(self.id, euType, tags)
         self.traceId = uuid1()
         self.traceBuilder.startTrace(self.id, self.traceId)
@@ -115,9 +114,3 @@ class ExecutionUnit(object):
             causingTraceId=None, causingEventId=None, tags=dict())
         self.traceBuilder.finishTrace(self.id, self.traceId)
         self.traceBuilder.finishEU(self.id)
-
-
-globalTraceBuilder: Optional[AbstractTraceBuilder] = None
-def setTraceBuilder(traceBuilder: AbstractTraceBuilder) -> None:
-    global globalTraceBuilder
-    globalTraceBuilder = traceBuilder
