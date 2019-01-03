@@ -59,6 +59,7 @@ class TestEU(unittest.TestCase):
                            tagFloat=3.14, tagString="String tag",
                            tagBytes=b"bytes tag 7")
         eu.finish()
+        # FIXME: order of strings is non-deterministic
         expectedBroadcast = dedent("""\
             broadcast_data {
               strings {
@@ -148,7 +149,7 @@ class TestEU(unittest.TestCase):
         # This is not the intended way of using peek(). Our goal here is
         # to test peek() looks ahead correctly
         traceContext = eu1.peek()
-        eu1.tracePoint(pb.Event.OT_START_SPAN, pb.Event.IDLE)
+        eu1.tracePoint(pb.Event.OT_FINISH_SPAN, pb.Event.IDLE)
         assert traceContext == eu1.getTraceContext()
 
         eu2.tracePoint(pb.Event.OT_START_SPAN, pb.Event.BUSY,
@@ -165,9 +166,9 @@ class TestEU(unittest.TestCase):
         eu1.tracePoint(pb.Event.OT_START_SPAN, pb.Event.BUSY,
                        causingContext=ctxOfSend)
         # The send event
-        eu2.tracePoint(pb.Event.OT_START_SPAN, pb.Event.IDLE)
+        eu2.tracePoint(pb.Event.OT_FINISH_SPAN, pb.Event.IDLE)
 
-        eu1.tracePoint(pb.Event.OT_START_SPAN, pb.Event.IDLE,
+        eu1.tracePoint(pb.Event.OT_FINISH_SPAN, pb.Event.IDLE,
                        )
         eu2.finish()
         eu1.finish()
