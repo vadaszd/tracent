@@ -187,7 +187,15 @@ message EventReference {
 
 
 message Tag {
-
+  // On EUs both of the key and the value MUST be present; the absence of
+  // either MUST be treated as a protocol error and the Tag MUST be ignored.
+  //
+  // On Events a key with a missing value is a protocol error only if it is
+  // (by the event sequence number) the first occurrence of the key in the
+  // TraceFragment. In subsequent occurrences of the key a missing value
+  // indicates the value has to be taken from the tag with the same key in the
+  // previous Event of the TraceFragment.
+  //
   // Keys longer than 4 characters when encoded as UTF-8
   // SHOULD be added to the string table and encoded using their alias in the
   // alias_key field. Shorter keys SHOULD be sent in the string_key field.

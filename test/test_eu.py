@@ -18,13 +18,13 @@ from tracent.oob import tracent_pb2 as pb
 class TestTracingDataHeader(unittest.TestCase):
 
     def testRoutingInfoCanBeExtracted(self) -> None:
-        tracingData = pb.TracingData()
-        tracingData.routing_key = b'example routing key'
-        serialized = tracingData.SerializeToString()
+        serialized_tracing_data = pb.TracingData()
+        serialized_tracing_data.routing_key = b'example routing key'
+        serialized = serialized_tracing_data.SerializeToString()
         routingInfo = pb.TracingDataHeader()
         routingInfo.ParseFromString(serialized)
-        assert routingInfo.routing_key == tracingData.routing_key, (
-            routingInfo.routing_key, tracingData.routing_key)
+        assert routingInfo.routing_key == serialized_tracing_data.routing_key, (
+            routingInfo.routing_key, serialized_tracing_data.routing_key)
 
 
 class InMemoryReporter(AbstractReporter):
@@ -32,19 +32,19 @@ class InMemoryReporter(AbstractReporter):
     def __init__(self) -> None:
         self.items: List[str] = list()
 
-    def send(self, routingKey: bytes, tracingData: bytes) -> None:
-        self.items.append(self._toText(tracingData))
+    def send(self, routing_key: bytes, serialized_tracing_data: bytes) -> None:
+        self.items.append(self._toText(serialized_tracing_data))
         # print ("Sent to '{}': \n{}"
-        #        .format(UUID(bytes=routingKey).hex, self._toText(tracingData)))
+        #        .format(UUID(bytes=routing_key).hex, self._toText(serialized_tracing_data)))
 
-    def broadcast(self, tracingData: bytes) -> None:
-        self.items.append(self._toText(tracingData))
-        # print ("Broadcast: \n{}".format(self._toText(tracingData)))
+    def broadcast(self, serialized_tracing_data: bytes) -> None:
+        self.items.append(self._toText(serialized_tracing_data))
+        # print ("Broadcast: \n{}".format(self._toText(serialized_tracing_data)))
 
-    def _toText(self,  tracingData: bytes) -> str:
-        tracingDataPDU = pb.TracingData()
-        tracingDataPDU.ParseFromString(tracingData)
-        return MessageToString(tracingDataPDU)
+    def _toText(self,  serialized_tracing_data: bytes) -> str:
+        tracing_data_pdu = pb.TracingData()
+        tracing_data_pdu.ParseFromString(serialized_tracing_data)
+        return MessageToString(tracing_data_pdu)
 
 
 class TestEU(unittest.TestCase):
@@ -143,17 +143,17 @@ class TestEU(unittest.TestCase):
         eu1 = ExecutionUnit(pb.ExecutionUnit.PROCESS)
         eu2 = ExecutionUnit(pb.ExecutionUnit.PROCESS)
 
-        eu1.startNewTrace()
-        eu1.tracePoint(pb.Event.OT_START_SPAN, pb.Event.BUSY)
+        eu1.start_new_trace()
+        eu1.trace_point(pb.Event.OT_START_SPAN, pb.Event.BUSY)
 
         # This is not the intended way of using peek(). Our goal here is
         # to test peek() looks ahead correctly
         traceContext = eu1.peek()
-        eu1.tracePoint(pb.Event.OT_FINISH_SPAN, pb.Event.IDLE)
-        assert traceContext == eu1.getTraceContext()
+        eu1.trace_point(pb.Event.OT_FINISH_SPAN, pb.Event.IDLE)
+        assert traceContext == eu1.get_trace_context()
 
-        eu2.tracePoint(pb.Event.OT_START_SPAN, pb.Event.BUSY,
-                       causingContext=eu1.getTraceContext())
+        eu2.trace_point(pb.Event.OT_START_SPAN, pb.Event.BUSY,
+                       causing_context=eu1.get_trace_context())
 
         # The correct use case for peek(): model a blocking send operation
         # The context returned by peek() refers to the send event that is
@@ -163,12 +163,12 @@ class TestEU(unittest.TestCase):
         # created after that operation completed.
         ctxOfSend = eu2.peek()
         # The receive event; it will refer to the send event
-        eu1.tracePoint(pb.Event.OT_START_SPAN, pb.Event.BUSY,
-                       causingContext=ctxOfSend)
+        eu1.trace_point(pb.Event.OT_START_SPAN, pb.Event.BUSY,
+                       causing_context=ctxOfSend)
         # The send event
-        eu2.tracePoint(pb.Event.OT_FINISH_SPAN, pb.Event.IDLE)
+        eu2.trace_point(pb.Event.OT_FINISH_SPAN, pb.Event.IDLE)
 
-        eu1.tracePoint(pb.Event.OT_FINISH_SPAN, pb.Event.IDLE,
+        eu1.trace_point(pb.Event.OT_FINISH_SPAN, pb.Event.IDLE,
                        )
         eu2.finish()
         eu1.finish()

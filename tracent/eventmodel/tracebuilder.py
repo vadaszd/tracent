@@ -1,14 +1,14 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 from encodings import utf_8 as utf8codec
-from uuid import UUID, uuid1
+from uuid import UUID
 
-from fnvhash import fnv1a_64, fnv1a_32
+from fnvhash import fnv1a_32
 from google.protobuf.internal.containers import (
     RepeatedCompositeFieldContainer
     )
 from typing import (
-    Optional, Dict, Tuple, NamedTuple, List, Union, Callable
+    Optional, Dict, Union
     )
 
 from .reporter import AbstractReporter
@@ -36,15 +36,15 @@ class AbstractTraceBuilder(ABC):
     """
 
     @abstractmethod
-    def startEU(self, euId: bytes, euType: pb.ExecutionUnit.Type,
-                tags: Dict[str, TagType]) -> None:
+    def start_eu(self, eu_id: bytes, eu_type: pb.ExecutionUnit.Type,
+                 tags: Dict[str, TagType]) -> None:
         """ Register a new EU with the trace builder
 
             Events can only be added to registered EUs.
         """
 
     @abstractmethod
-    def finishEU(self, euId: bytes) -> None:
+    def finish_eu(self, eu_id: bytes) -> None:
         """  Unregister an EU
 
             Registered EUs occupy resources, therefore must be cleand up
@@ -52,25 +52,25 @@ class AbstractTraceBuilder(ABC):
         """
 
     @abstractmethod
-    def startTrace(self, euId: bytes, traceId: UUID) -> None: pass
+    def start_trace(self, eu_id: bytes, trace_id: UUID) -> None: pass
 
     @abstractmethod
-    def addEvent(self, euId: bytes, traceId: UUID, sequence_number: int,
-                 eventType: pb.Event.Type, status: pb.Event.Status,
-                 causingTraceId: Optional[bytes],
-                 causingEventId: Optional[bytes],
+    def add_event(self, eu_id: bytes, trace_id: UUID, sequence_number: int,
+                  event_type: pb.Event.Type, status: pb.Event.Status,
+                  causing_trace_id: Optional[bytes],
+                  causing_event_id: Optional[bytes],
+                  ) -> None:
+        """
+        """
+
+    @abstractmethod
+    def add_tags(self, eu_id: bytes, event_sequence_number: bytes,
                  tags: Dict[str, TagType]) -> None:
-        """
-        """
-
-    @abstractmethod
-    def addTags(self, euId: bytes, eventSequenceNbr: bytes,
-               tags: Dict[str, TagType]) -> None:
         """ Attach the tags to the given event, overriding conflicting tags.
         """
 
     @abstractmethod
-    def finishTrace(self, euId: bytes, traceId: UUID) -> None: pass
+    def finish_trace(self, eu_id: bytes, trace_id: UUID) -> None: pass
 
 
 class SimpleTraceBuilder(AbstractTraceBuilder):
@@ -86,192 +86,203 @@ class SimpleTraceBuilder(AbstractTraceBuilder):
     """
 
     class EuState(object):
-        euPDU: pb.ExecutionUnit
-        tracingDataPDU: pb.TracingData
-        traceFragmentPDU:  pb.TraceFragment
-        eventPDU: pb.Event
-        timeReference:  datetime
-        isTraceOngoing: bool
+        eu_pdu: pb.ExecutionUnit
+        tracing_data_pdu: pb.TracingData
+        trace_fragment_pdu:  pb.TraceFragment
+        event_pdu: pb.Event
+        time_reference:  datetime
+        is_trace_ongoing: bool
+        event_tags: Dict[str, TagType]   # Track the last value of each tag key
 
         def __repr__(self) -> str:
             return repr(self.__dict__)
 
-    stringTable: 'StringTable'  # one global isinstance
-    euStates: Dict[bytes, EuState]
+    string_table: 'StringTable'  # one global isinstance
+    eu_states: Dict[bytes, EuState]
     reporter: AbstractReporter
 
     def __init__(self, reporter: AbstractReporter) -> None:
-        self.stringTable = StringTable()
+        self.string_table = StringTable()
         self.reporter = reporter
-        self.euStates = dict()
+        self.eu_states = dict()
 
-    def startEU(self, euId: bytes, euType: pb.ExecutionUnit.Type,
-                tags: Dict[str, TagType]
-                ) -> None:
-        assert euId not in self.euStates
-        euState = self.euStates[euId] = SimpleTraceBuilder.EuState()
-        euState.euPDU = pb.ExecutionUnit()
-        euState.euPDU.id = euId
-        euState.euPDU.type = euType
-        euState.isTraceOngoing = False
-        self._addTags(euState.euPDU.tags, tags)
-
-    def finishEU(self, euId: bytes) -> None:
-        euState = self.euStates.pop(euId)
-        assert not euState.isTraceOngoing, euState
-
-    def startTrace(self, euId: bytes, traceId: UUID) -> None:
-        tracingDataPDU = pb.TracingData()
-        tracingDataPDU.routing_key = traceId.bytes   # big-endian
-        traceFragmentPDU = tracingDataPDU.routed_data.trace_fragments.add()
-        traceFragmentPDU.trace_id = traceId.bytes  # big-endian
-        traceFragmentPDU.execution_unit_id = euId
-        traceFragmentPDU.time_reference.GetCurrentTime()
-
-        euState = self.euStates[euId]
-        assert not euState.isTraceOngoing, euState
-        euState.isTraceOngoing = True
-        euState.tracingDataPDU = tracingDataPDU
-        euState.traceFragmentPDU = traceFragmentPDU
-        euState.timeReference = traceFragmentPDU.time_reference.ToDatetime()
-
-    def finishTrace(self, euId: bytes, traceId: UUID) -> None:
-        euState = self.euStates[euId]
-        assert euState.isTraceOngoing, euState
-        euState.isTraceOngoing = False
-
-        traceFragmentPDU = euState.traceFragmentPDU
-        assert traceFragmentPDU.trace_id == traceId.bytes, (euId,
-                 UUID(bytes=traceFragmentPDU.trace_id), traceId)
-
-        if self.stringTable.isDirty:
-            # Broadcast the string table
-            tracingDataPDU = pb.TracingData()
-            self.stringTable.saveTo(tracingDataPDU.broadcast_data.strings)
-            self._send(tracingDataPDU)
-
-        tracingDataPDU = euState.tracingDataPDU
-        tracingDataPDU.routed_data.execution_units.extend([euState.euPDU])
-        self._send(tracingDataPDU)
-
-    def addEvent(self, euId: bytes, traceId: UUID, sequence_number: int,
-                 eventType: pb.Event.Type, status: pb.Event.Status,
-                 causingTraceId: Optional[bytes],
-                 causingEventId: Optional[bytes],
+    def start_eu(self, eu_id: bytes, eu_type: pb.ExecutionUnit.Type,
                  tags: Dict[str, TagType]
                  ) -> None:
-        euState = self.euStates[euId]
-        assert euState.isTraceOngoing, euState
-        traceFragmentPDU = euState.traceFragmentPDU
-        eventPDU = traceFragmentPDU.events.add()
-        eventPDU.sequence_number = sequence_number
-        eventPDU.timestamp.FromTimedelta(datetime.utcnow() -
-                                         euState.timeReference)
-        eventPDU.event_type = eventType
-        eventPDU.status = status
+        assert eu_id not in self.eu_states
+        eu_state = self.eu_states[eu_id] = SimpleTraceBuilder.EuState()
+        eu_state.eu_pdu = pb.ExecutionUnit()
+        eu_state.eu_pdu.id = eu_id
+        eu_state.eu_pdu.type = eu_type
+        eu_state.is_trace_ongoing = False
+        eu_state.event_tags = dict()
+        for key, value in tags.items():
+            assert value is not None
+            self._add_tag(eu_state.eu_pdu.tags, key, value)
 
-        if causingTraceId is None:
-            assert causingEventId is None
+    def finish_eu(self, eu_id: bytes) -> None:
+        eu_state = self.eu_states.pop(eu_id)
+        assert not eu_state.is_trace_ongoing, eu_state
+
+    def start_trace(self, eu_id: bytes, trace_id: UUID) -> None:
+        tracing_data_pdu = pb.TracingData()
+        tracing_data_pdu.routing_key = trace_id.bytes   # big-endian
+        trace_fragment_pdu = tracing_data_pdu.routed_data.trace_fragments.add()
+        trace_fragment_pdu.trace_id = trace_id.bytes  # big-endian
+        trace_fragment_pdu.execution_unit_id = eu_id
+        trace_fragment_pdu.time_reference.GetCurrentTime()
+
+        eu_state = self.eu_states[eu_id]
+        assert not eu_state.is_trace_ongoing, eu_state
+        eu_state.is_trace_ongoing = True
+        eu_state.tracing_data_pdu = tracing_data_pdu
+        eu_state.trace_fragment_pdu = trace_fragment_pdu
+        eu_state.time_reference = trace_fragment_pdu.time_reference.ToDatetime()
+
+    def finish_trace(self, eu_id: bytes, trace_id: UUID) -> None:
+        eu_state = self.eu_states[eu_id]
+        assert eu_state.is_trace_ongoing, eu_state
+        eu_state.is_trace_ongoing = False
+        eu_state.event_tags.clear()
+
+        trace_fragment_pdu = eu_state.trace_fragment_pdu
+        assert trace_fragment_pdu.trace_id == trace_id.bytes, (eu_id, UUID(bytes=trace_fragment_pdu.trace_id), trace_id)
+
+        if self.string_table.is_dirty:
+            # Broadcast the string table
+            tracing_data_pdu = pb.TracingData()
+            self.string_table.save_to(tracing_data_pdu.broadcast_data.strings)
+            self._send(tracing_data_pdu)
+
+        tracing_data_pdu = eu_state.tracing_data_pdu
+        tracing_data_pdu.routed_data.execution_units.extend([eu_state.eu_pdu])
+        self._send(tracing_data_pdu)
+
+    def add_event(self, eu_id: bytes, trace_id: UUID, sequence_number: int,
+                  event_type: pb.Event.Type, status: pb.Event.Status,
+                  causing_trace_id: Optional[bytes],
+                  causing_event_id: Optional[bytes],
+                  ) -> None:
+        eu_state = self.eu_states[eu_id]
+        assert eu_state.is_trace_ongoing, eu_state
+        trace_fragment_pdu = eu_state.trace_fragment_pdu
+        event_pdu = trace_fragment_pdu.events.add()
+        event_pdu.sequence_number = sequence_number
+        event_pdu.timestamp.FromTimedelta(datetime.utcnow() -
+                                          eu_state.time_reference)
+        event_pdu.event_type = event_type
+        event_pdu.status = status
+
+        if causing_trace_id is None:
+            assert causing_event_id is None
         else:
-            assert causingEventId is not None
-            eventReferencePDU = eventPDU.causing_events.add()
+            assert causing_event_id is not None
+            event_reference_pdu = event_pdu.causing_events.add()
 
-            if causingTraceId != traceFragmentPDU.trace_id:
-                eventReferencePDU.trace_id=causingTraceId
+            if causing_trace_id != trace_fragment_pdu.trace_id:
+                event_reference_pdu.trace_id = causing_trace_id
 
-            eventReferencePDU.event_id=causingEventId
+            event_reference_pdu.event_id = causing_event_id
 
-        self._addTags(eventPDU.tags, tags)
+        eu_state.event_pdu = event_pdu
 
-        euState.eventPDU = eventPDU
-
-    def addTags(self, euId: bytes, eventSequenceNbr: bytes,
-               tags: Dict[str, TagType]) -> None:
-        euState = self.euStates[euId]
-        assert euState.isTraceOngoing, euState
-        self._addTags(euState.eventPDU.tags, tags)
-
-    def _addTags(self, tagContainer: 'RepeatedCompositeFieldContainer[pb.Tag]',
-                 tags: Dict[str, TagType],
-                 encodeStringValues: bool=False) -> None:
+    def add_tags(self, eu_id: bytes, event_sequence_number: bytes,
+                 tags: Dict[str, TagType]) -> None:
+        eu_state = self.eu_states[eu_id]
+        assert eu_state.is_trace_ongoing, eu_state
 
         for key, value in tags.items():
-            tagPDU = tagContainer.add()
+            if value == eu_state.event_tags[key]:
+                value_to_add = None
+            else:
+                value_to_add = value
+                eu_state.event_tags[key] = value
+            self._add_tag(eu_state.event_pdu.tags, key, value_to_add)
 
-            try:
-                tagPDU.alias_key = self.stringTable.getAlias(key)
-            except StringTable.HashCollisionError as e:
-                tagPDU.string_key = key
+    def _add_tag(self, tag_container: 'RepeatedCompositeFieldContainer[pb.Tag]',
+                 key: str,
+                 value: Optional[TagType],
+                 encode_string_values: bool = False
+                 ) -> None:
 
+        tag_pdu = tag_container.add()
+
+        try:
+            tag_pdu.alias_key = self.string_table.get_alias(key)
+        except StringTable.HashCollisionError:
+            tag_pdu.string_key = key
+
+        if value is not None:
             if isinstance(value, int):
-                tagPDU.int_value = value
+                tag_pdu.int_value = value
             elif isinstance(value, float):
-                tagPDU.float_value = value
+                tag_pdu.float_value = value
             elif isinstance(value, bool):
-                tagPDU.boolean_value = value
+                tag_pdu.boolean_value = value
             elif isinstance(value, str):
-                if encodeStringValues:
+                if encode_string_values:
                     try:
-                        tagPDU.alias_value = self.stringTable.getAlias(key)
-                    except StringTable.HashCollisionError as e:
-                        tagPDU.string_value = key
+                        tag_pdu.alias_value = self.string_table.get_alias(key)
+                    except StringTable.HashCollisionError:
+                        tag_pdu.string_value = key
                 else:
-                    tagPDU.string_value = key
+                    tag_pdu.string_value = key
             elif isinstance(value, bytes):
-                tagPDU.bytes_value = value
+                tag_pdu.bytes_value = value
             else:
                 raise TypeError("Supported tag value types are int, float, "
                                 "boolean, str and bytes, found {}"
                                 .format(type(value)))
 
-    def _send(self, tracingDataPDU: pb.TracingData) -> None:
-        tracingData = tracingDataPDU.SerializeToString()
-        routing_key = tracingDataPDU.routing_key
+    def _send(self, tracing_data_pdu: pb.TracingData) -> None:
+        serialized_tracing_data = tracing_data_pdu.SerializeToString()
+        routing_key = tracing_data_pdu.routing_key
         if routing_key:
-            self.reporter.send(routing_key, tracingData)
+            self.reporter.send(routing_key, serialized_tracing_data)
         else:
-            self.reporter.broadcast(tracingData)
+            self.reporter.broadcast(serialized_tracing_data)
 
 
 class StringTable(object):
     """ Translate strings into probabilisticly unique aliases
     """
-    stringByAlias: Dict[int, str]
-    aliasByString: Dict[str, int]
-    isDirty: bool
+    strings_by_alias: Dict[int, str]
+    aliases_by_string: Dict[str, int]
+    is_dirty: bool
 
-    class HashCollisionError(ValueError): pass
+    class HashCollisionError(ValueError):
+        pass
 
     def __init__(self) -> None:
-        self.stringByAlias = dict()
-        self.aliasByString = dict()
-        self.isDirty = False
+        self.strings_by_alias = dict()
+        self.aliases_by_string = dict()
+        self.is_dirty = False
 
-    def getAlias(self, string: str) -> int:
+    def get_alias(self, string: str) -> int:
         try:
-            alias = self.aliasByString[string]
+            alias = self.aliases_by_string[string]
         except KeyError:
-            encodedString, consumed = utf8codec.encode(string)
+            encoded_string, consumed = utf8codec.encode(string)
             assert consumed == len(string)
-            alias = fnv1a_32(encodedString)
+            alias = fnv1a_32(encoded_string)
             try:
-                conflictingString = self.stringByAlias[alias]
+                conflicting_string = self.strings_by_alias[alias]
             except KeyError:
-                self.stringByAlias[alias] = string
-                self.aliasByString[string] = alias
-                self.isDirty = True
+                self.strings_by_alias[alias] = string
+                self.aliases_by_string[string] = alias
+                self.is_dirty = True
             else:
                 raise StringTable.HashCollisionError(
                     "The fnv1a hash {} of the new string '{}' "
                     "collides with that of the existing string "
-                    "{}".format(alias, string, conflictingString))
+                    "{}".format(alias, string, conflicting_string))
         return alias
 
-    def saveTo(self,
-               entries: 'RepeatedCompositeFieldContainer[pb.StringTableEntry]'
-               ) -> None:
-            for alias, value in self.stringByAlias.items():
+    def save_to(self,
+                entries: 'RepeatedCompositeFieldContainer[pb.StringTableEntry]'
+                ) -> None:
+            for alias, value in self.strings_by_alias.items():
                 entry = entries.add()
                 entry.alias = alias
                 entry.value = value
-            self.isDirty = False
+            self.is_dirty = False
