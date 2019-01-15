@@ -193,8 +193,8 @@ message Tag {
   // On Events a key with a missing value is a protocol error only if it is
   // (by the event sequence number) the first occurrence of the key in the
   // TraceFragment. In subsequent occurrences of the key a missing value
-  // indicates the value has to be taken from the tag with the same key in the
-  // previous Event of the TraceFragment.
+  // indicates the value has to be taken from the most recent same-key tag
+  // in the previous Events of the TraceFragment.
   //
   // Keys longer than 4 characters when encoded as UTF-8
   // SHOULD be added to the string table and encoded using their alias in the
