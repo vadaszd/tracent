@@ -4,17 +4,12 @@ from .span import Span
 from .span import SpanContext
 from .scope import Scope
 from .scope_manager import ScopeManager
-from .propagation import Format, UnsupportedFormatException
+from .propagation import Format
 
 from . import TagType
 
 
 class Tracer(object):
-    """Tracer is the entry point API between instrumentation code and the
-    tracing implementation.
-    This implementation both defines the public Tracer API, and provides
-    a default no-op behavior.
-    """
 
     # TODO: proper type (enum) for formats
     _supported_formats = [Format.TEXT_MAP, Format.BINARY, Format.HTTP_HEADERS]
@@ -30,9 +25,8 @@ class Tracer(object):
     def start_active_span(self,
                           operation_name: str,
                           child_of: Optional[Union[Span, SpanContext]],
-                          references: Optional[List[References]],
+                          references: Optional[List[Reference]],
                           tags: Optional[Dict[str, TagType]],
-                          # https://github.com/python/typeshed/blob/master/stdlib/2and3/time.pyi#L81
                           start_time: float,
                           ignore_active_span: bool,
                           finish_on_close: bool) -> Scope: ...
@@ -40,7 +34,7 @@ class Tracer(object):
     def start_span(self,
                    operation_name: Optional[str],
                    child_of: Optional[Union[Span, SpanContext]],
-                   references: Optional[List[References]],
+                   references: Optional[List[Reference]],
                    tags: Optional[Dict[str, TagType]],
                    start_time: float,
                    ignore_active_span: bool) -> Span: ...

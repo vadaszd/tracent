@@ -60,12 +60,6 @@ class Span(object):
                  exc_tb: Optional[TracebackType]
                  ) -> Optional[bool]: ...
 
-    def _on_error(self,
-                 exc_type: Optional[Type[BaseException]],
-                 exc_val: Optional[BaseException],
-                 exc_tb: Optional[TracebackType]
-                 ) -> None: ...
-
     def log_event(self,
                   event: TagType,
                   payload: Optional[TagType]
