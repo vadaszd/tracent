@@ -13,7 +13,8 @@ from .propagation import InvalidCarrierException  # noqa
 from .propagation import SpanContextCorruptedException  # noqa
 from .propagation import UnsupportedFormatException  # noqa
 
-tracer: Tracer
+#tracer: Tracer
+TagType = Union[bool, int, float, str, bytes]
 
 def global_tracer() -> Tracer: ...
 

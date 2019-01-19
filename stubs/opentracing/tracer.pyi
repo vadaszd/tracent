@@ -1,13 +1,12 @@
 from typing import Optional, Union, NamedTuple, List, Dict, Any
 
-from collections import namedtuple
 from .span import Span
 from .span import SpanContext
 from .scope import Scope
 from .scope_manager import ScopeManager
 from .propagation import Format, UnsupportedFormatException
 
-TagType = Union[bool, int, float, str, bytes]
+from . import TagType
 
 
 class Tracer(object):
