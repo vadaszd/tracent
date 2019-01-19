@@ -1,4 +1,4 @@
-from typing import Optional, Union, NamedTuple, List, Dict, Any
+from typing import Optional, Union, NamedTuple, Iterable, Dict, Any
 
 from .span import Span
 from .span import SpanContext
@@ -23,20 +23,20 @@ class Tracer(object):
     def active_span(self) -> Span: ...
 
     def start_active_span(self,
-                          operation_name: str,
+                          operation_name: Optional[str],
                           child_of: Optional[Union[Span, SpanContext]],
-                          references: Optional[List[Reference]],
+                          references: Optional[Iterable[Reference]],
                           tags: Optional[Dict[str, TagType]],
-                          start_time: float,
+                          start_time: Optional[float],
                           ignore_active_span: bool,
                           finish_on_close: bool) -> Scope: ...
 
     def start_span(self,
                    operation_name: Optional[str],
                    child_of: Optional[Union[Span, SpanContext]],
-                   references: Optional[List[Reference]],
+                   references: Optional[Iterable[Reference]],
                    tags: Optional[Dict[str, TagType]],
-                   start_time: float,
+                   start_time: Optional[float],
                    ignore_active_span: bool) -> Span: ...
 
     def inject(self, span_context: SpanContext,

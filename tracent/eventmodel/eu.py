@@ -4,19 +4,12 @@ import struct
 from itertools import count
 
 
-from typing import (
-    Optional, Dict, NamedTuple, Callable
-    )
+from typing import (Dict, Callable, Iterable)
 
 from fnvhash import fnv1a_64
 
-from .tracebuilder import AbstractTraceBuilder, TagType
+from .tracebuilder import AbstractTraceBuilder, TagType, EventReference
 from ..oob import tracent_pb2 as pb
-
-
-class TraceContext(NamedTuple):
-    trace_id: bytes
-    event_id: bytes
 
 
 class ExecutionUnit(object):
@@ -44,7 +37,7 @@ class ExecutionUnit(object):
         self.trace_builder.add_event(
             self.id, self.trace_id, self.nextEventSequenceNbr,
             event_type=pb.Event.CREATE_EU, status=pb.Event.IDLE,
-            causing_trace_id=None, causing_event_id=None)
+            causes=tuple())
         self._generate_next_event_id()
 
     def _init_event_numbering(self) -> Callable[[], None]:
@@ -64,27 +57,22 @@ class ExecutionUnit(object):
         self.trace_id = uuid1()
         self.trace_builder.start_trace(self.id, self.trace_id)
 
+    def switch_trace(self, new_context: EventReference) -> None:
+        if self.trace_id != new_context.trace_id:
+            self.trace_builder.finish_trace(self.id, self.trace_id)
+            self.trace_id = new_context.trace_id
+            self.trace_builder.start_trace(self.id, self.trace_id)
+
     def trace_point(self, event_type: pb.Event.Type, status: pb.Event.Status,
-                    causing_context: Optional[TraceContext] = None,
-                    switch_trace: bool = True, **tags: TagType
+                    causes: Iterable[EventReference] = tuple(),
+                    tags: Dict[str, TagType] = dict()
                     ) -> None:
         self._flush_tags()    # These tags belong to the previous event
-        self.event_tags = tags
-        if causing_context is None:
-            causing_trace_id = None
-            causing_event_id = None
-        else:
-            causing_trace_id = causing_context.trace_id
-            assert causing_trace_id is not None
-            if switch_trace and causing_trace_id != self.trace_id:
-                self.trace_builder.finish_trace(self.id, self.trace_id)
-                self.trace_id = UUID(bytes=causing_trace_id)
-                self.trace_builder.start_trace(self.id, self.trace_id)
-            causing_event_id = causing_context.event_id
+        self.event_tags.update(tags)
 
         self.trace_builder.add_event(
             self.id, self.trace_id, self.nextEventSequenceNbr,
-            event_type, status, causing_trace_id, causing_event_id)
+            event_type, status, causes)
         self._generate_next_event_id()
 
     def _get_event_id(self, event_sequence_number: int) -> bytes:
@@ -94,13 +82,13 @@ class ExecutionUnit(object):
                               "<Q",  event_sequence_number) + self.id)
         return struct.pack("<Q", event_id_int)
 
-    def get_trace_context(self) -> TraceContext:
-        return TraceContext(self.trace_id.bytes,  # big endian
-                            self._get_event_id(self.event_sequence_number))
+    def get_trace_context(self) -> EventReference:
+        return EventReference(self.trace_id,
+                              self._get_event_id(self.event_sequence_number))
 
-    def peek(self) -> TraceContext:
-        return TraceContext(self.trace_id.bytes,  # big endian
-                            self._get_event_id(self.nextEventSequenceNbr))
+    def peek(self) -> EventReference:
+        return EventReference(self.trace_id,
+                              self._get_event_id(self.nextEventSequenceNbr))
 
     def add_tags(self, **tags: TagType) -> None:
         """ Add the key-value tags to the event most recently created on the EU
@@ -115,16 +103,17 @@ class ExecutionUnit(object):
         self.event_tags.update(tags)
 
     def _flush_tags(self) -> None:
-            self.trace_builder.add_tags(
-                self.id,
-                self._get_event_id(self.event_sequence_number),
-                self.event_tags)
+        self.trace_builder.add_tags(
+            self.id,
+            self._get_event_id(self.event_sequence_number),
+            self.event_tags)
+        self.event_tags.clear()
 
     def finish(self) -> None:
         self._flush_tags()
         self.trace_builder.add_event(
             self.id, self.trace_id, self.nextEventSequenceNbr,
             event_type=pb.Event.FINISH_EU, status=pb.Event.UNKNOWN,
-            causing_trace_id=None, causing_event_id=None)
+            causes=list())
         self.trace_builder.finish_trace(self.id, self.trace_id)
         self.trace_builder.finish_eu(self.id)

@@ -8,13 +8,18 @@ from google.protobuf.internal.containers import (
     RepeatedCompositeFieldContainer
     )
 from typing import (
-    Optional, Dict, Union
+    Optional, Dict, Union, NamedTuple, Iterable
     )
 
 from .reporter import AbstractReporter
 from ..oob import tracent_pb2 as pb
 
 TagType = Union[bool, int, float, str, bytes]
+
+
+class EventReference(NamedTuple):
+    trace_id: UUID
+    event_id: bytes
 
 
 class AbstractTraceBuilder(ABC):
@@ -57,8 +62,7 @@ class AbstractTraceBuilder(ABC):
     @abstractmethod
     def add_event(self, eu_id: bytes, trace_id: UUID, sequence_number: int,
                   event_type: pb.Event.Type, status: pb.Event.Status,
-                  causing_trace_id: Optional[bytes],
-                  causing_event_id: Optional[bytes],
+                  causes: Iterable[EventReference],
                   ) -> None:
         """
         """
@@ -160,8 +164,7 @@ class SimpleTraceBuilder(AbstractTraceBuilder):
 
     def add_event(self, eu_id: bytes, trace_id: UUID, sequence_number: int,
                   event_type: pb.Event.Type, status: pb.Event.Status,
-                  causing_trace_id: Optional[bytes],
-                  causing_event_id: Optional[bytes],
+                  causes: Iterable[EventReference],
                   ) -> None:
         eu_state = self.eu_states[eu_id]
         assert eu_state.is_trace_ongoing, eu_state
@@ -173,16 +176,14 @@ class SimpleTraceBuilder(AbstractTraceBuilder):
         event_pdu.event_type = event_type
         event_pdu.status = status
 
-        if causing_trace_id is None:
-            assert causing_event_id is None
-        else:
-            assert causing_event_id is not None
+        for causing_context in causes:
             event_reference_pdu = event_pdu.causing_events.add()
 
-            if causing_trace_id != trace_fragment_pdu.trace_id:
-                event_reference_pdu.trace_id = causing_trace_id
+            if causing_context.trace_id.bytes != trace_fragment_pdu.trace_id:
+                # .bytes: big endian byte order
+                event_reference_pdu.trace_id = causing_context.trace_id.bytes
 
-            event_reference_pdu.event_id = causing_event_id
+            event_reference_pdu.event_id = causing_context.event_id
 
         eu_state.event_pdu = event_pdu
 
