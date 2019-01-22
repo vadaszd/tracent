@@ -4,7 +4,7 @@ import struct
 from itertools import count
 
 
-from typing import (Dict, Callable, Iterable)
+from typing import (Dict, Callable, Iterable, Optional)
 
 from fnvhash import fnv1a_64
 
@@ -59,18 +59,25 @@ class ExecutionUnit(object):
 
         return _generate_next_event_id
 
-    def start_new_trace(self) -> None:
-        self.trace_builder.finish_trace(self.id, self.trace_id)
-        self.trace_id = uuid1()
-        self.trace_builder.start_trace(self.id, self.trace_id)
-
-    def trace_point(self, trace_id: UUID, event_type: pb.Event.Type,
+    def trace_point(self, trace_id: Optional[UUID],
+                    event_type: pb.Event.Type,
                     status: pb.Event.Status,
                     causes: Iterable[EventReference] = tuple(),
                     tags: Dict[str, TagType] = dict()
                     ) -> EventReference:
+        """ Generate a new event in a trace
 
+        :param trace_id: ID of the trace to continue or None to start a new one
+        :param event_type:
+        :param status:
+        :param causes:
+        :param tags:
+        :return: a reference to the new event
+        """
         self._flush_tags()    # These tags belong to the previous event
+
+        if trace_id is None:
+            trace_id = uuid1()
 
         if self.trace_id != trace_id:
             self.trace_builder.finish_trace(self.id, self.trace_id)

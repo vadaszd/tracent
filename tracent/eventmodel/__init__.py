@@ -69,7 +69,6 @@ class Tracent(object):
             self._traceBuilder
         )
 
-    start_new_trace = delegate_to(ExecutionUnit.start_new_trace)
     trace_point = delegate_to(ExecutionUnit.trace_point)
     get_trace_context = delegate_to(ExecutionUnit.get_trace_context)
     peek = delegate_to(ExecutionUnit.peek)

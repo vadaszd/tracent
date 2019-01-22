@@ -25,7 +25,7 @@ class EventBasedSpan(Span):
     def __init__(
             self,
             tracer: Tracer,
-            trace_id: UUID,
+            trace_id: Optional[UUID],
             operation_name: Optional[str] = None,
             causes: Iterable[SpanContext] = tuple(),
             tags=Dict[str, TagType]
@@ -39,7 +39,6 @@ class EventBasedSpan(Span):
         super(EventBasedSpan, self).__init__(tracer, context=context)
 
         self._lock = tracent().lock_class()
-        self._trace_id = trace_id
         self._start_event = tracent().trace_point(
             trace_id=trace_id,
             event_type=pb.Event.OT_START_SPAN,
@@ -47,6 +46,7 @@ class EventBasedSpan(Span):
             causes=(parent_ctx.event_reference for parent_ctx in causes),
             tags=tags
         )
+        self._trace_id = self._start_event.trace_id
         self._finish_event = None
         self._latest_events = dict()
         tracent().add_tags(operation_name=operation_name)
