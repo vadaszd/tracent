@@ -20,6 +20,7 @@ TagType = Union[bool, int, float, str, bytes]
 class EventReference(NamedTuple):
     trace_id: UUID
     event_id: bytes
+    eu_id: bytes    # for convenience, not used in the PDU
 
 
 class AbstractTraceBuilder(ABC):

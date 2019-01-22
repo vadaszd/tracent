@@ -7,9 +7,9 @@ from .tracebuilder import (
     SimpleTraceBuilder as _SimpleTraceBuilder
     )
 from .reporter import AbstractReporter as _Reporter
-from .threadingmodel import (
-    AbstractThreadingModel,
-    StandardThreadingModel
+from .concurrency_model import (
+    ConcurrencyModel,
+    PythonThreads
     )
 
 RT = TypeVar('RT')
@@ -32,23 +32,31 @@ def delegate_to(f: Callable[[ExecutionUnit], RT]
 
 class Tracent(object):
     ConcreteThreadingModel = TypeVar('ConcreteThreadingModel',
-                                     bound=AbstractThreadingModel)
+                                     bound=ConcurrencyModel)
 
     _reporter:  _Reporter
     _traceBuilder: Optional[_TraceBuilder]
-    _threading_model_class: Type[AbstractThreadingModel]
-    _threading_model: Optional[AbstractThreadingModel]
+    _concurrency_model_class: Type[ConcurrencyModel]
+    _threading_model: Optional[ConcurrencyModel]
 
     def __init__(self) -> None:
-        self._threading_model_class = StandardThreadingModel
+        self._concurrency_model_class = PythonThreads
         self._reporter = _Reporter()
         self._traceBuilder = None
         self._threading_model = None
 
+    @property
+    def lock_class(self) -> Type[ConcurrencyModel.Acquirable]:
+        return self._concurrency_model_class.Lock
+
+    @property
+    def my_eu_id(self) -> bytes:
+        return self._threading_model.get_eu()
+
     def set_threading_model(self,
                             threading_model_class: Type[ConcreteThreadingModel]
                             ) -> 'Tracent':
-        self._threading_model_class = threading_model_class
+        self._concurrency_model_class = threading_model_class
         return self
 
     def set_reporter(self, reporter: _Reporter) -> 'Tracent':
@@ -57,10 +65,11 @@ class Tracent(object):
 
     def start_tracing(self) -> None:
         self._traceBuilder = _SimpleTraceBuilder(self._reporter)
-        self._threading_model = self._threading_model_class(self._traceBuilder)
+        self._threading_model = self._concurrency_model_class(
+            self._traceBuilder
+        )
 
     start_new_trace = delegate_to(ExecutionUnit.start_new_trace)
-    switch_trace = delegate_to(ExecutionUnit.switch_trace)
     trace_point = delegate_to(ExecutionUnit.trace_point)
     get_trace_context = delegate_to(ExecutionUnit.get_trace_context)
     peek = delegate_to(ExecutionUnit.peek)

@@ -16,6 +16,8 @@ class ExecutionUnit(object):
 
     id: bytes
     event_sequence_number: int
+    next_event_sequence_number: int
+    latest_event_ref: EventReference
     event_tags: Dict[str, TagType]
     trace_id: UUID
     trace_builder: AbstractTraceBuilder
@@ -25,9 +27,9 @@ class ExecutionUnit(object):
                  ) -> None:
         self.id = struct.pack("Q", random.getrandbits(64))
         self.event_sequence_number = -1   # This value is used nowhere
-        self.nextEventSequenceNbr = 0
-        self._generate_next_event_id = self._init_event_numbering()
-        self._generate_next_event_id()
+        self.next_event_sequence_number = 0
+        self._generate_next_event_ref = self._init_event_numbering()
+        self._generate_next_event_ref()
         self.event_tags = dict()
         self.trace_builder = trace_builder
         self.trace_builder.start_eu(self.id, eu_type, tags)
@@ -35,20 +37,25 @@ class ExecutionUnit(object):
         self.trace_builder.start_trace(self.id, self.trace_id)
 
         self.trace_builder.add_event(
-            self.id, self.trace_id, self.nextEventSequenceNbr,
+            self.id, self.trace_id, self.next_event_sequence_number,
             event_type=pb.Event.CREATE_EU, status=pb.Event.IDLE,
             causes=tuple())
-        self._generate_next_event_id()
+        self._generate_next_event_ref()
 
     def _init_event_numbering(self) -> Callable[[], None]:
         event_counter = count(0)
 
         def _generate_next_event_id() -> None:
             # Switch the actual event ID to the next event ID
-            self.event_sequence_number = self.nextEventSequenceNbr
+            self.event_sequence_number = self.next_event_sequence_number
 
             # Generate a new number for the next event
-            self.nextEventSequenceNbr = next(event_counter)
+            self.next_event_sequence_number = next(event_counter)
+            self.latest_event_ref = EventReference(
+                self.trace_id,
+                self._get_event_id(self.event_sequence_number),
+                self.id
+            )
 
         return _generate_next_event_id
 
@@ -57,23 +64,26 @@ class ExecutionUnit(object):
         self.trace_id = uuid1()
         self.trace_builder.start_trace(self.id, self.trace_id)
 
-    def switch_trace(self, new_context: EventReference) -> None:
-        if self.trace_id != new_context.trace_id:
-            self.trace_builder.finish_trace(self.id, self.trace_id)
-            self.trace_id = new_context.trace_id
-            self.trace_builder.start_trace(self.id, self.trace_id)
-
-    def trace_point(self, event_type: pb.Event.Type, status: pb.Event.Status,
+    def trace_point(self, trace_id: UUID, event_type: pb.Event.Type,
+                    status: pb.Event.Status,
                     causes: Iterable[EventReference] = tuple(),
                     tags: Dict[str, TagType] = dict()
-                    ) -> None:
+                    ) -> EventReference:
+
         self._flush_tags()    # These tags belong to the previous event
+
+        if self.trace_id != trace_id:
+            self.trace_builder.finish_trace(self.id, self.trace_id)
+            self.trace_id = trace_id
+            self.trace_builder.start_trace(self.id, self.trace_id)
+
         self.event_tags.update(tags)
 
         self.trace_builder.add_event(
-            self.id, self.trace_id, self.nextEventSequenceNbr,
+            self.id, self.trace_id, self.next_event_sequence_number,
             event_type, status, causes)
-        self._generate_next_event_id()
+        self._generate_next_event_ref()
+        return self.latest_event_ref
 
     def _get_event_id(self, event_sequence_number: int) -> bytes:
         # Apply the fnv1a hash on the Little-endian encoding of the
@@ -83,12 +93,21 @@ class ExecutionUnit(object):
         return struct.pack("<Q", event_id_int)
 
     def get_trace_context(self) -> EventReference:
-        return EventReference(self.trace_id,
-                              self._get_event_id(self.event_sequence_number))
+        return self.latest_event_ref
 
     def peek(self) -> EventReference:
-        return EventReference(self.trace_id,
-                              self._get_event_id(self.nextEventSequenceNbr))
+        """ Pre-view the next event reference.
+
+        Useful for recording blocking send operations.
+
+        :return: A reference to the next event, provided the trace remains the
+                    same
+        """
+        return EventReference(
+            self.trace_id,
+            self._get_event_id(self.next_event_sequence_number),
+            self.id
+        )
 
     def add_tags(self, **tags: TagType) -> None:
         """ Add the key-value tags to the event most recently created on the EU
@@ -112,7 +131,7 @@ class ExecutionUnit(object):
     def finish(self) -> None:
         self._flush_tags()
         self.trace_builder.add_event(
-            self.id, self.trace_id, self.nextEventSequenceNbr,
+            self.id, self.trace_id, self.next_event_sequence_number,
             event_type=pb.Event.FINISH_EU, status=pb.Event.UNKNOWN,
             causes=list())
         self.trace_builder.finish_trace(self.id, self.trace_id)

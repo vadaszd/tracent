@@ -1,11 +1,11 @@
 
-from threading import Lock
 from typing import Optional, Iterable, Dict
 from uuid import UUID
 
 from opentracing import Tracer, Span
 
 from .context import SpanContext
+from ..eventmodel import ConcurrencyModel
 from ..eventmodel import tracent
 from ..eventmodel.eu import EventReference
 from ..eventmodel.tracebuilder import TagType
@@ -16,8 +16,11 @@ class EventBasedSpan(Span):
     """EventBasedSpan is a thread-safe implementation of opentracing.Span.
     """
 
-    startEvent: EventReference
-    latestEvent: EventReference
+    _trace_id: UUID
+    _lock: ConcurrencyModel.Acquirable
+    _start_event: EventReference
+    _finish_event: Optional[EventReference]
+    _latest_events: Dict[bytes, EventReference]  # keyed by EU ID
 
     def __init__(
             self,
@@ -28,22 +31,25 @@ class EventBasedSpan(Span):
             tags=Dict[str, TagType]
     ):
         merged_baggage: Dict[str, str] = dict()
+
         for parent_ctx in causes:
             merged_baggage.update(parent_ctx.baggage)
 
         context = SpanContext(tracent().peek(), merged_baggage)
         super(EventBasedSpan, self).__init__(tracer, context=context)
 
-        tracent().switch_trace(trace_id)
-        self.start_event = tracent().trace_point(
+        self._lock = tracent().lock_class()
+        self._trace_id = trace_id
+        self._start_event = tracent().trace_point(
+            trace_id=trace_id,
             event_type=pb.Event.OT_START_SPAN,
             status=pb.Event.UNKNOWN,
             causes=(parent_ctx.event_reference for parent_ctx in causes),
             tags=tags
         )
+        self._finish_event = None
+        self._latest_events = dict()
         tracent().add_tags(operation_name=operation_name)
-        self._lock = Lock()   # XXX should use the lock class of threadingmodel
-        self.trace_id = trace_id
 
     def set_operation_name(self, operation_name: str) -> Span:
         tracent().add_tags(operation_name=operation_name)
@@ -54,26 +60,48 @@ class EventBasedSpan(Span):
         return super(EventBasedSpan, self).set_tag(key, value)
 
     def log_kv(self, key_values: Dict[str, str], timestamp=None) -> Span:
-        tracent().trace_point(
+        if self._finish_event is not None:
+            raise RuntimeError("Span is already finished.")
+
+        event = tracent().trace_point(
+            trace_id=self._trace_id,
             event_type=pb.Event.OT_LOG,
             status=pb.Event.UNKNOWN,
             tags=key_values
         )
+        with self._lock:
+            self._latest_events[event.eu_id] = event
+
         return super(EventBasedSpan, self).log_kv(key_values, timestamp)
 
     def finish(self, finish_time=None):
-        tracent().trace_point(
-            event_type=pb.Event.OT_FINISH_SPAN,
-            status=pb.Event.UNKNOWN,
-        )
+        # need to lock due to access to _latest_events & _finish_event
+        with self._lock:
+            if self._finish_event is not None:
+                raise RuntimeError("Span is already finished.")
+
+            my_eu_id = tracent().my_eu_id
+            self._finish_event = tracent().trace_point(
+                trace_id=self._trace_id,
+                event_type=pb.Event.OT_FINISH_SPAN,
+                status=pb.Event.UNKNOWN,
+                causes=[event for event in self._latest_events.values()
+                        if event.eu_id != my_eu_id]
+            )
 
     @property
     def context(self) -> SpanContext:
-        tracent().trace_point(event_type=pb.Event.OT_GET_CONTEXT,
-                              status=pb.Event.UNKNOWN,
-                              )
+        event = (tracent().trace_point(event_type=pb.Event.OT_GET_CONTEXT,
+                                       status=pb.Event.UNKNOWN,
+                                       )
+                 if self._finish_event is None
+                 else self._finish_event)
+
+        with self._lock:
+            self._latest_events[event.eu_id] = event
+
         baggage = super(EventBasedSpan, self).context.baggage
-        return SpanContext(tracent().get_trace_context(), baggage)
+        return SpanContext(event, baggage)
 
     def set_baggage_item(self, key, value):
         new_context = self._context.with_baggage_item(key, value)
