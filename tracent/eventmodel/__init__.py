@@ -1,5 +1,5 @@
 from functools import wraps
-from typing import Optional, Callable, TypeVar, Type
+from typing import Optional, Callable, TypeVar, Type, Any, cast
 
 from .eu import ExecutionUnit
 from .tracebuilder import (
@@ -12,22 +12,22 @@ from .concurrency_model import (
     PythonThreads
     )
 
-RT = TypeVar('RT')
-ARGS = TypeVar('ARGS')
-KWARGS = TypeVar('KWARGS')
+
+FuncType = Callable[..., Any]
+F = TypeVar('F', bound=FuncType)
 
 
-def delegate_to(f: Callable[[ExecutionUnit], RT]
-                ) -> Callable[[], RT]:
+def delegate_to(f: F) -> F:
     @wraps(f)
-    def _delegate_to_eu(self: 'Tracent', *args: ARGS,
-                        **kwargs: KWARGS) -> RT:
+    def _delegate_to_eu(self: 'Tracent', *args: Any,
+                        **kwargs: Any) -> Any:
         if self._threading_model is None:
             raise ValueError("To start tracing, "
                              "tracent().startTracing() must be called")
         eu_instance = self._threading_model.get_eu()
         return f(eu_instance, *args, **kwargs)
-    return _delegate_to_eu
+        # return f(*args, **kwargs)
+    return cast(F, _delegate_to_eu)
 
 
 class Tracent(object):
@@ -51,7 +51,7 @@ class Tracent(object):
 
     @property
     def my_eu_id(self) -> bytes:
-        return self._threading_model.get_eu()
+        return self._threading_model.get_eu().id
 
     def set_threading_model(self,
                             threading_model_class: Type[ConcreteThreadingModel]
