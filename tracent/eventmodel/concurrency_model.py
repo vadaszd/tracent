@@ -1,3 +1,4 @@
+import sys
 import threading
 
 from abc import ABC, abstractmethod
@@ -13,10 +14,10 @@ class ConcurrencyModel(ABC):
     class Acquirable(Protocol, ContextManager['Acquirable']):
 
         if sys.version_info >= (3,):
-            def acquire(self, blocking: bool = ..., timeout: float = ...) -> bool:
+            def acquire(self, blocking: bool, timeout: float) -> bool:
                 ...
         else:
-            def acquire(self, blocking: bool = ...) -> bool:
+            def acquire(self, blocking: bool) -> bool:
                 ...
 
         def release(self) -> None:

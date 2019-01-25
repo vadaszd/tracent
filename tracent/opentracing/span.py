@@ -70,6 +70,7 @@ class EventBasedSpan(Span):
             tags=key_values
         )
         with self._lock:
+            assert event.eu_id is not None
             self._latest_events[event.eu_id] = event
 
         return super(EventBasedSpan, self).log_kv(key_values, timestamp)
@@ -98,6 +99,7 @@ class EventBasedSpan(Span):
                  else self._finish_event)
 
         with self._lock:
+            assert event.eu_id is not None
             self._latest_events[event.eu_id] = event
 
         baggage = super(EventBasedSpan, self).context.baggage
