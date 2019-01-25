@@ -5,6 +5,7 @@ from opentracing import Format, Tracer, Span, Reference, Scope
 from opentracing import UnsupportedFormatException
 from opentracing.scope_managers import ThreadLocalScopeManager, ScopeManager
 from .context import SpanContext
+from .propagator import Propagator
 from .span import EventBasedSpan
 from ..eventmodel.tracebuilder import TagType
 
