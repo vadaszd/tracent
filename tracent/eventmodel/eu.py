@@ -14,6 +14,7 @@ from ..oob import tracent_pb2 as pb
 
 class ExecutionUnit(object):
 
+    # TODO: Avoid dupe EU IDs after a fork, generated both pre- and post-fork
     id: bytes
     event_sequence_number: int
     next_event_sequence_number: int
