@@ -1,4 +1,5 @@
-autopep8    
+svgwrite
+autopep8
 tracer
 fnvhash   
 future   

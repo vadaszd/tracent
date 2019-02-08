@@ -24,7 +24,7 @@ from tracent.oob import tracent_pb2 as pb
 class Point(NamedTuple):
     """ A point in the SVG coordinate-system
 
-        The origin is the upper left corner of the drawing
+        The origin is the upper left corner of the _drawing
         The X axis runs horizontally, Y points downwards.
         Both axis are considered to be scaled in mm.
     """
@@ -52,6 +52,16 @@ class DiagramElement:
     position: Point  # reference point
 
     def accept(self, visitor: 'DiagramVisitor'):
+        """ Visit the diagram elememt and its constituents
+
+            This method defines the interface for accepting a visitor and it
+            also provides a default implementation making the visitor visit
+            the element. This is suitable for atomic diagram elements.
+
+            Compound diagram elements must override this method and make sure
+            that their constituent elements accept the visitor *before*
+            it visits the compound element.
+        """
         visitor.visit(self)
 
 
