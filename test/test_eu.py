@@ -3,9 +3,8 @@ import unittest
 import re
 from pprint import pprint
 from textwrap import dedent
-from uuid import UUID
 
-from typing import List, Tuple, Union
+from typing import List
 
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.text_format import MessageToString

@@ -41,7 +41,6 @@ class Tracent(object):
 
     def __init__(self) -> None:
         self._concurrency_model_class = PythonThreads
-        self._reporter = _Reporter()
         self._traceBuilder = None
         self._threading_model = None
 

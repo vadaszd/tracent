@@ -7,9 +7,11 @@
     It also defines an interface for visiting the structure and the
     interface visitors are expected to implement.
 """
+import inspect
+
 from abc import ABC, abstractmethod
 from math import sqrt
-from typing import Dict, List, NamedTuple
+from typing import Dict, List, NamedTuple, Type
 
 try:
     from tracent import TagType
@@ -65,7 +67,45 @@ class DiagramElement:
         visitor.visit(self)
 
 
+def visitor(cls: Type):
+    targets = dict()
+    for name, member in cls.__dict__.items():
+        if not name.startswith('visit') or not inspect.isfunction(member):
+            continue
+        signature = inspect.signature(member)
+        if len(signature.parameters) != 2:
+            raise TypeError("{} should have exactly 2 parameter"
+                            .format(member.__name__))
+        parameters = iter(signature.parameters.values())
+        next(parameters)
+        de = next(parameters)
+        print(de.annotation)
+    return cls
+
+@visitor
 class DiagramVisitor(ABC):
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        try:
+            targets = cls.__visitor_targets__
+        except AttributeError:
+            targets =  cls.__visitor_targets__ = dict()
+        for name, member in cls.__dict__.items():
+            if not name.startswith('visit') or not inspect.isfunction(member):
+                continue
+            signature = inspect.signature(member)
+            if len(signature.parameters) != 2:
+                raise TypeError("{} should have exactly 2 parameter"
+                                .format(member.__name__))
+            parameters = iter(signature.parameters.values())
+            next(parameters)
+            de = next(parameters)
+            annotation = de.annotation
+            if not isinstance(annotation, type):
+                raise TypeError("Visit*() parameter must be annotated with "
+                                "a type, got {}".format(repr(annotation)))
+            targets[annotation] = member
 
     @abstractmethod
     def visit_trace_diagram(self, de: 'TraceDiagram'): pass
@@ -95,7 +135,11 @@ class DiagramVisitor(ABC):
     def visit_edge(self, de: 'Edge'): pass
 
     def visit(self, de: DiagramElement):
-        pass  # TODO: dispatch to the type-specific visit_* methods
+        for cls in type(de).mro():
+            method = self.__visitor_targets__.get(cls, None)
+            if method is not None:
+                return method(self, de)
+        raise TypeError("No visit*() method for {}".format(repr(de)))
 
 
 #  https://www.uml-diagrams.org/sequence-diagrams.html
@@ -123,16 +167,18 @@ class TraceDiagram(DiagramElement):
     life_lines: List['LifeLine']
     edges: List['Edge']
 
-    def __init__(self):
+    def __init__(self, start_time: float, time_scale: float):
+        self.start_time = start_time
+        self.time_scale = time_scale
         self.life_lines = list()
         self.edges = list()
 
     def accept(self, visitor: DiagramVisitor):
+        visitor.visit(self)
         for life_line in self.life_lines:
             life_line.accept(visitor)
         for edge in self.edges:
             edge.accept(visitor)
-        visitor.visit(self)
 
 
 class LifeLine(DiagramElement):
@@ -161,6 +207,7 @@ class LifeLine(DiagramElement):
         # The order of visiting the elements is significant and is optimized
         # for the layout generator
         # (may be exploited by other stateful visitors as well)
+        visitor.visit(self)
         self.head.accept(visitor)
 
         for vertex in self.vertices:
@@ -171,7 +218,6 @@ class LifeLine(DiagramElement):
 
         self.foot.accept(visitor)
         self.spine.accept(visitor)
-        visitor.visit(self)
 
 
 class Head(DiagramElement):

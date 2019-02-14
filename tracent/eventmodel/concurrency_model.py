@@ -2,7 +2,11 @@ import sys
 import threading
 
 from abc import ABC, abstractmethod
-from typing import Type, Protocol, ContextManager
+from typing import Type, ContextManager
+try:
+    from typing import Protocol
+except ImportError:
+    from typing_extensions import Protocol
 
 from .eu import ExecutionUnit
 from .tracebuilder import AbstractTraceBuilder
@@ -11,7 +15,7 @@ from ..oob import tracent_pb2 as pb
 
 class ConcurrencyModel(ABC):
 
-    class Acquirable(Protocol, ContextManager['Acquirable']):
+    class Acquirable(Protocol, ):  # ContextManager['Acquirable']
 
         if sys.version_info >= (3,):
             def acquire(self, blocking: bool, timeout: float) -> bool:

@@ -74,7 +74,7 @@ class AlignTopMiddle(DotLikePositioner):
                                  x=point.x - self._width/2,
                                  y=point.y,
                                  width=self._width,
-                                 heigth=self._height
+                                 height=self._height
                                  )
 
 
@@ -87,7 +87,7 @@ class AlignBottomMiddle(DotLikePositioner):
                                  x=point.x - self._width/2,
                                  y=point.y - self._height,
                                  width=self._width,
-                                 heigth=self._height
+                                 height=self._height
                                  )
 
 
@@ -99,7 +99,7 @@ class AlignCenterMiddle(DotLikePositioner):
                                  x=point.x - self._width/2,
                                  y=point.y - self._height/2,
                                  width=self._width,
-                                 heigth=self._height
+                                 height=self._height
                                  )
 
 
@@ -111,7 +111,7 @@ class AlignCenterLeft(DotLikePositioner):
                                  x=point.x,
                                  y=point.y - self._height/2,
                                  width=self._width,
-                                 heigth=self._height
+                                 height=self._height
                                  )
 
 
@@ -123,7 +123,7 @@ class AlignCenterRight(DotLikePositioner):
                                  x=point.x - self._width,
                                  y=point.y - self._height/2,
                                  width=self._width,
-                                 heigth=self._height
+                                 height=self._height
                                  )
 
 
@@ -207,25 +207,25 @@ class SymbolSet(ABC):
         return self._edge
 
     def head_group(self):
-        return self._drawing.g(self._head_attributes)
+        return self._drawing.g(**self._head_attributes)
 
     def foot_group(self):
-        return self._drawing.g(self._foot_attributes)
+        return self._drawing.g(**self._foot_attributes)
 
     def vertex_group(self):
-        return self._drawing.g(self._vertex_attributes)
+        return self._drawing.g(**self._vertex_attributes)
 
     def destruction_group(self):
-        return self._drawing.g(self._destruction_attributes)
+        return self._drawing.g(**self._destruction_attributes)
 
     def activation_group(self):
-        return self._drawing.g(self._activation_attributes)
+        return self._drawing.g(**self._activation_attributes)
 
     def spine_group(self):
-        return self._drawing.g(self._spine_attributes)
+        return self._drawing.g(**self._spine_attributes)
 
     def edge_group(self):
-        return self._drawing.g(self._edge_attributes)
+        return self._drawing.g(**self._edge_attributes)
 
     @abstractmethod
     def _build_head_shape(self, symbol: Symbol): pass
@@ -243,8 +243,8 @@ class SymbolSet(ABC):
 # noinspection PyAbstractClass
 class VerticalSymbols(SymbolSet):
 
-    head_size: Tuple[int, int] = (30, 8)
-    foot_size: Tuple[int, int] = (30, 8)
+    head_size: Tuple[int, int] = (100, 20)
+    foot_size: Tuple[int, int] = (100, 20)
     vertex_radius: int = 5
 
     def __init__(self, drawing: Drawing):
@@ -259,8 +259,8 @@ class VerticalSymbols(SymbolSet):
                                     )
         self._vertex = AlignCenterMiddle(self._drawing,
                                          self._build_vertex_shape,
-                                         self.vertex_radius,
-                                         self.vertex_radius
+                                         self.vertex_radius * 2,
+                                         self.vertex_radius * 2
                                          )
         self._destruction = AlignCenterMiddle(self._drawing,
                                               self._build_destruction_shape,
@@ -278,11 +278,11 @@ class SimpleVerticalSymbols(VerticalSymbols):
         self._foot_attributes = dict(fill='yellow', stroke='red',
                                      stroke_width=1)
         self._vertex_attributes = dict(fill='black', stroke='black',
-                                       stroke_width=1)
+                                       stroke_width=0)
         self._destruction_attributes = dict(stroke='black', stroke_width=1)
         self._activation_attributes = dict(stroke='green', stroke_width=8)
         self._spine_attributes = dict(stroke='black', stroke_width=2)
-        self._edge_attributes = dict(stroke='red', stroke_width=4)
+        self._edge_attributes = dict(stroke='red', stroke_width=10)
 
     def _build_head_shape(self, symbol: Symbol):
         symbol.add(self._drawing.rect(insert=(0, 0),
@@ -322,7 +322,7 @@ class SVGRenderer(DiagramVisitor):
         self._drawing = Drawing(filename=filename, debug=True)
         self._symbols = symbol_set(self._drawing)
         self._heads: Group = self._symbols.head_group()
-        self._feet: Group = self._symbols.feet_group()
+        self._feet: Group = self._symbols.foot_group()
         self._spines: Group = self._symbols.spine_group()
         self._vertices: Group = self._symbols.vertex_group()
         self._activations: Group = self._symbols.activation_group()
@@ -360,7 +360,7 @@ class SVGRenderer(DiagramVisitor):
         )
 
     def visit_edge(self, de: Edge):
-        self._heads.add(
+        self._edges.add(
             self._symbols.edge.from_to(de.position, de.end_position)
         )
 
