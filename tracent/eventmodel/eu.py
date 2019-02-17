@@ -4,11 +4,11 @@ import struct
 from itertools import count
 
 
-from typing import (Dict, Callable, Iterable, Optional)
+from typing import (Callable, Iterable, Optional)
 
 from fnvhash import fnv1a_64
 
-from .tracebuilder import AbstractTraceBuilder, TagType, EventReference
+from .tracebuilder import AbstractTraceBuilder, TagType, TagDict, EventReference
 from ..oob import tracent_pb2 as pb
 
 
@@ -19,7 +19,7 @@ class ExecutionUnit(object):
     event_sequence_number: int
     next_event_sequence_number: int
     latest_event_ref: EventReference
-    event_tags: Dict[str, TagType]
+    event_tags: TagDict
     trace_id: UUID
     trace_builder: AbstractTraceBuilder
 
@@ -64,7 +64,7 @@ class ExecutionUnit(object):
                     event_type: pb.Event.Type,
                     status: pb.Event.Status,
                     causes: Iterable[EventReference] = tuple(),
-                    tags: Dict[str, TagType] = dict()
+                    tags: TagDict = dict()
                     ) -> EventReference:
         """ Generate a new event in a trace
 

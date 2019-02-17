@@ -7,7 +7,7 @@ from opentracing.scope_managers import ThreadLocalScopeManager, ScopeManager
 from .context import SpanContext
 from .propagator import Propagator
 from .span import EventBasedSpan
-from ..eventmodel.tracebuilder import TagType
+from ..eventmodel.tracebuilder import TagDict
 
 
 class EventBasedTracer(Tracer):
@@ -49,7 +49,7 @@ class EventBasedTracer(Tracer):
                           operation_name: Optional[str],
                           child_of: Optional[Union[Span, SpanContext]] = None,
                           references:  Optional[Iterable[Reference]] = None,
-                          tags: Optional[Dict[str, TagType]] = None,
+                          tags: Optional[TagDict] = None,
                           start_time: Optional[float] = None,
                           ignore_active_span: bool = False,
                           finish_on_close: bool = True) -> Scope:
@@ -70,7 +70,7 @@ class EventBasedTracer(Tracer):
                    operation_name: Optional[str] = None,
                    child_of: Optional[Union[Span, SpanContext]] = None,
                    references: Optional[Iterable[Reference]] = None,
-                   tags: Optional[Dict[str, TagType]] = None,
+                   tags: Optional[TagDict] = None,
                    start_time: Optional[float] = None,
                    ignore_active_span: bool = False) -> Span:
 

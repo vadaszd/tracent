@@ -6,7 +6,7 @@ from .scope import Scope
 from .scope_manager import ScopeManager
 from .propagation import Format
 
-from . import TagType
+from . import TagDict
 
 
 class Tracer(object):
@@ -26,7 +26,7 @@ class Tracer(object):
                           operation_name: Optional[str],
                           child_of: Optional[Union[Span, SpanContext]],
                           references: Optional[Iterable[Reference]],
-                          tags: Optional[Dict[str, TagType]],
+                          tags: Optional[TagDict],
                           start_time: Optional[float],
                           ignore_active_span: bool,
                           finish_on_close: bool) -> Scope: ...
@@ -35,7 +35,7 @@ class Tracer(object):
                    operation_name: Optional[str],
                    child_of: Optional[Union[Span, SpanContext]],
                    references: Optional[Iterable[Reference]],
-                   tags: Optional[Dict[str, TagType]],
+                   tags: Optional[TagDict],
                    start_time: Optional[float],
                    ignore_active_span: bool) -> Span: ...
 
@@ -65,5 +65,5 @@ def follows_from(referenced_context: SpanContext) -> Reference: ...
 
 def start_child_span(parent_span: Span,
                      operation_name: str,
-                     tags: Optional[Dict[str, TagType]],
+                     tags: Optional[TagDict],
                      start_time: Optional[float]) -> Span: ...

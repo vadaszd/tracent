@@ -15,6 +15,7 @@ from .reporter import AbstractReporter
 from ..oob import tracent_pb2 as pb
 
 TagType = Union[bool, int, float, str, bytes]
+TagDict = Dict[str, TagType]
 
 
 class EventReference(NamedTuple):
@@ -43,7 +44,7 @@ class AbstractTraceBuilder(ABC):
 
     @abstractmethod
     def start_eu(self, eu_id: bytes, eu_type: pb.ExecutionUnit.Type,
-                 tags: Dict[str, TagType]) -> None:
+                 tags: TagDict) -> None:
         """ Register a new EU with the trace builder
 
             Events can only be added to registered EUs.
@@ -70,7 +71,7 @@ class AbstractTraceBuilder(ABC):
 
     @abstractmethod
     def add_tags(self, eu_id: bytes, event_sequence_number: bytes,
-                 tags: Dict[str, TagType]) -> None:
+                 tags: TagDict) -> None:
         """ Attach the tags to the given event, overriding conflicting tags.
         """
 
@@ -97,7 +98,7 @@ class SimpleTraceBuilder(AbstractTraceBuilder):
         event_pdu: pb.Event
         time_reference:  datetime
         is_trace_ongoing: bool
-        event_tags: Dict[str, TagType]   # Track the last value of each tag key
+        event_tags: TagDict   # Track the last value of each tag key
 
         def __repr__(self) -> str:
             return repr(self.__dict__)
@@ -112,7 +113,7 @@ class SimpleTraceBuilder(AbstractTraceBuilder):
         self.eu_states = dict()
 
     def start_eu(self, eu_id: bytes, eu_type: pb.ExecutionUnit.Type,
-                 tags: Dict[str, TagType]
+                 tags: TagDict
                  ) -> None:
         assert eu_id not in self.eu_states
         eu_state = self.eu_states[eu_id] = SimpleTraceBuilder.EuState()
@@ -189,7 +190,7 @@ class SimpleTraceBuilder(AbstractTraceBuilder):
         eu_state.event_pdu = event_pdu
 
     def add_tags(self, eu_id: bytes, event_sequence_number: bytes,
-                 tags: Dict[str, TagType]) -> None:
+                 tags: TagDict) -> None:
         eu_state = self.eu_states[eu_id]
         assert eu_state.is_trace_ongoing, eu_state
 

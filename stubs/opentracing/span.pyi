@@ -17,7 +17,7 @@ from typing import Optional, Dict, Type
 from types import TracebackType
 
 from .tracer import Tracer
-from . import TagType
+from . import TagType, TagDict
 
 
 class SpanContext(object):
@@ -45,7 +45,7 @@ class Span(object):
     def set_tag(self, key: str, value: TagType) -> 'Span': ...
 
     def log_kv(self,
-               key_values: Dict[str, TagType],
+               key_values: TagDict,
                timestamp: Optional[float]) -> 'Span': ...
 
     def set_baggage_item(self, key: str, value: str) -> 'Span': ...

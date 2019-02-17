@@ -8,7 +8,7 @@ from .context import SpanContext
 from ..eventmodel import ConcurrencyModel
 from ..eventmodel import tracent
 from ..eventmodel.eu import EventReference
-from ..eventmodel.tracebuilder import TagType
+from ..eventmodel.tracebuilder import TagType, TagDict
 from ..oob import tracent_pb2 as pb
 
 
@@ -28,7 +28,7 @@ class EventBasedSpan(Span):
             trace_id: Optional[UUID],
             operation_name: Optional[str] = None,
             causes: Iterable[SpanContext] = tuple(),
-            tags=Dict[str, TagType]
+            tags=TagDict
     ):
         merged_baggage: Dict[str, str] = dict()
 

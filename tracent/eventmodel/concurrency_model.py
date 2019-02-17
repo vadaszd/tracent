@@ -2,7 +2,7 @@ import sys
 import threading
 
 from abc import ABC, abstractmethod
-from typing import Type, ContextManager
+from typing import Type
 try:
     from typing import Protocol
 except ImportError:
