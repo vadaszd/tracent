@@ -1,2 +1,2 @@
 from .eventmodel import tracent
-from .eventmodel.tracebuilder import TagType
+from .eventmodel.tracebuilder import TagDict

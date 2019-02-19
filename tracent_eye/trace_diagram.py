@@ -14,12 +14,12 @@ from math import sqrt
 from typing import Dict, List, NamedTuple, Type
 
 try:
-    from tracent import TagType
+    from tracent import TagDict
 except ImportError:
     import sys
     sys.path.append('..')
 
-from tracent import TagType
+from tracent import TagDict
 from tracent.oob import tracent_pb2 as pb
 
 
@@ -67,22 +67,6 @@ class DiagramElement:
         visitor.visit(self)
 
 
-def visitor(cls: Type):
-    targets = dict()
-    for name, member in cls.__dict__.items():
-        if not name.startswith('visit') or not inspect.isfunction(member):
-            continue
-        signature = inspect.signature(member)
-        if len(signature.parameters) != 2:
-            raise TypeError("{} should have exactly 2 parameter"
-                            .format(member.__name__))
-        parameters = iter(signature.parameters.values())
-        next(parameters)
-        de = next(parameters)
-        print(de.annotation)
-    return cls
-
-@visitor
 class DiagramVisitor(ABC):
 
     def __init_subclass__(cls, **kwargs):
@@ -90,7 +74,7 @@ class DiagramVisitor(ABC):
         try:
             targets = cls.__visitor_targets__
         except AttributeError:
-            targets =  cls.__visitor_targets__ = dict()
+            targets = cls.__visitor_targets__ = dict()
         for name, member in cls.__dict__.items():
             if not name.startswith('visit') or not inspect.isfunction(member):
                 continue
@@ -194,10 +178,10 @@ class LifeLine(DiagramElement):
     activations: List['Activation']
     time_axes_origin: Point
 
-    def __init__(self, trace_diagram: TraceDiagram):
+    def __init__(self, trace_diagram: TraceDiagram, tags: TagDict):
         self.trace_diagram = trace_diagram
         trace_diagram.life_lines.append(self)
-        self.head = Head(self)
+        self.head = Head(self, tags)
         self.foot = Foot(self)
         self.spine = Spine(self)
         self.vertices = list()
@@ -228,10 +212,11 @@ class Head(DiagramElement):
             - horizontally: the mean of the horizontal coordinates of its
                     leftmost and rightmost points.
     """
-    eu_tags: Dict[str, TagType]
+    eu_tags: TagDict
 
-    def __init__(self, life_line: LifeLine):
+    def __init__(self, life_line: LifeLine, tags: TagDict):
         self.life_line = life_line
+        self.tags = tags
 
 
 class Foot(DiagramElement):
@@ -259,14 +244,15 @@ class Vertex(DiagramElement):
     """ A dot-like shape representing an event on the EU.
     """
     time_offset: float
-    tags: Dict[str, TagType]
+    tags: TagDict
 
-    def __init__(self, time_stamp: float, tags: Dict[str, TagType],
-                 life_line: LifeLine):
+    def __init__(self, life_line: LifeLine, time_stamp: float,
+                 tags: TagDict,
+                 ):
         """
+        :param life_line: The life-line associated with the EU of the event
         :param time_stamp: Must be already corrected for clock skew
         :param tags: The tags associated with the event
-        :param life_line: The life-line associated with the EU of the event
         """
         self.life_line = life_line
         life_line.vertices.append(self)

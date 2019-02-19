@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Type, TypeVar, Tuple, Callable
+from typing import Dict, Type, TypeVar, Tuple, Callable, List
 
 from svgwrite import Drawing
 from svgwrite.base import BaseElement
@@ -11,8 +11,63 @@ from .trace_diagram import (
     Point)
 
 
+class MockUserAgentFont(object):
+
+    def __init__(self, line_distance: float, glyph_width: float,
+                 horizontal_margin: float, vertical_margin: float,
+                 vertical_offset: float
+                 ):
+        """ Initialize a MockUserAgent instance
+
+        :param line_distance: the distance among lines (the assumed EM)
+        :param glyph_width:
+        :param horizontal_margin:
+        :param vertical_margin:
+        :param vertical_offset:
+        """
+        self.line_distance, self.glyph_width, self.horizontal_margin, \
+            self.vertical_margin, self.vertical_offset = line_distance, \
+            glyph_width, horizontal_margin, vertical_margin, vertical_offset
+
+    def get_bounding_box(self, x: float, y: float,
+                         lines: List[str]):
+        """ Get the bounding box for a list of lines rendered.
+
+        The top middle of the box is going to be aligned on the (x, y)
+        coordinates.
+
+        :param x: horizontal coordinate of the middle of the text
+        :param y: the vertical coordinate of the top of the text
+        :param lines: iterable of strings to be rendered
+
+        :return: A 3-tuple;
+                  -  the first element contains the coordinates of the top-left
+                    of the bounding box as 2-tuple of integers,
+                  - the second contains its width and height as 2-tuple
+                  - the third is the vertical distance dy to be used with
+                    tspan elements
+        """
+        num_lines = len(lines)
+        num_glyphs = max(len(line) for line in lines)
+        width = (num_glyphs * self.glyph_width + self.horizontal_margin
+                 ) * self.line_distance
+        height = (num_lines + self.vertical_margin) * self.line_distance
+        xx = x - 0.5 * width
+        yy = y - self.vertical_offset * self.line_distance
+        return ((int(xx),    int(yy)),
+                (int(width), int(height)),
+                int(self.line_distance)
+                )
+
+
+mock_user_agent_font = MockUserAgentFont(
+    line_distance=25.0, glyph_width=0.26, horizontal_margin=0.5,
+    vertical_margin=0.4, vertical_offset=-0.1
+)
+
+
 class Positioner(ABC):
-    """ Abstract base class for positioning trace diagram shapes
+    """ Abstract base class for creating and positioning trace diagram shapes
 
         Concrete derived classes wrap `svgwrite.base.BaseElement`s (more
         precisely, instances of derived classes of Baselement) representing the
@@ -24,7 +79,7 @@ class Positioner(ABC):
         self._drawing = drawing
 
 
-class DotLikePositioner(Positioner):
+class DotLikeSymbolPositioner(Positioner):
     """ Abstract base class for positioning dot-like shapes.
 
         The position of a dot-like shape is determined by a single Point. The
@@ -66,7 +121,7 @@ class DotLikePositioner(Positioner):
         """
 
 
-class AlignTopMiddle(DotLikePositioner):
+class AlignTopMiddle(DotLikeSymbolPositioner):
     def at(self, point: Point) -> BaseElement:
         """ Place the symbol aligning its top middle at the given point
         """
@@ -78,7 +133,7 @@ class AlignTopMiddle(DotLikePositioner):
                                  )
 
 
-class AlignBottomMiddle(DotLikePositioner):
+class AlignBottomMiddle(DotLikeSymbolPositioner):
     def at(self, point: Point) -> BaseElement:
 
         """ Place the symbol aligning its bottom middle at the given point
@@ -91,7 +146,7 @@ class AlignBottomMiddle(DotLikePositioner):
                                  )
 
 
-class AlignCenterMiddle(DotLikePositioner):
+class AlignCenterMiddle(DotLikeSymbolPositioner):
     def at(self, point: Point) -> BaseElement:
         """ Place the symbol aligning its center middle at the given point
         """
@@ -103,7 +158,7 @@ class AlignCenterMiddle(DotLikePositioner):
                                  )
 
 
-class AlignCenterLeft(DotLikePositioner):
+class AlignCenterLeft(DotLikeSymbolPositioner):
     def at(self, point: Point) -> BaseElement:
         """ Place the symbol aligning its center left at the given point
         """
@@ -115,7 +170,7 @@ class AlignCenterLeft(DotLikePositioner):
                                  )
 
 
-class AlignCenterRight(DotLikePositioner):
+class AlignCenterRight(DotLikeSymbolPositioner):
     def at(self, point: Point) -> BaseElement:
         """ Place the symbol aligning its center right at the given point
         """
@@ -149,10 +204,10 @@ class LineLikePositioner(Positioner):
 class SymbolSet(ABC):
     """ Abstract class defining the appearance of trace diagram symbols
     """
-    _head: DotLikePositioner
-    _foot: DotLikePositioner
-    _vertex: DotLikePositioner
-    _destruction: DotLikePositioner
+    _head: DotLikeSymbolPositioner
+    _foot: DotLikeSymbolPositioner
+    _vertex: DotLikeSymbolPositioner
+    _destruction: DotLikeSymbolPositioner
     _activation: LineLikePositioner
     _spine: LineLikePositioner
     _edge: LineLikePositioner
@@ -172,22 +227,22 @@ class SymbolSet(ABC):
         self._edge = LineLikePositioner(self._drawing)
 
     @property
-    def head(self) -> DotLikePositioner:
+    def head(self) -> DotLikeSymbolPositioner:
         """ The symbol used for heads"""
         return self._head
 
     @property
-    def foot(self) -> DotLikePositioner:
+    def foot(self) -> DotLikeSymbolPositioner:
         """ The symbol used for feet"""
         return self._foot
 
     @property
-    def vertex(self) -> DotLikePositioner:
+    def vertex(self) -> DotLikeSymbolPositioner:
         """ The symbol used for vertices"""
         return self._vertex
 
     @property
-    def destruction(self) -> DotLikePositioner:
+    def destruction(self) -> DotLikeSymbolPositioner:
         """ The symbol used for destructions"""
         return self._destruction
 
@@ -337,8 +392,8 @@ class SVGRenderer(DiagramVisitor):
     def visit_life_line(self, de: LifeLine):
         pass
 
-    def visit_head(self, de: Head):
-        self._heads.add(self._symbols.head.at(de.position))
+    def visit_head(self, head: Head):
+        self._heads.add(self._symbols.head.at(head.position))
 
     def visit_vertex(self, de: Vertex):
         self._vertices.add(self._symbols.vertex.at(de.position))
@@ -366,3 +421,22 @@ class SVGRenderer(DiagramVisitor):
 
     @property
     def drawing(self) -> Drawing: return self._drawing
+
+# https://www.lifewire.com/aspect-ratio-table-common-fonts-3467385
+# Arial	0.52
+# Avant Garde	0.45
+# Bookman	0.40
+# Calibri	0.47
+# Century Schoolbook	0.48
+# Cochin	0.41
+# Comic Sans	0.53
+# Courier	0.43
+# Courier New	0.42
+# Garamond	0.38
+# Georgia	0.48
+# Helvetica	0.52
+# Palatino	0.42
+# Tahoma	0.55
+# Times New Roman	0.45
+# Trebuchet	0.52
+# Verdana	0.58
