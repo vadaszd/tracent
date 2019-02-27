@@ -36,11 +36,25 @@ class Point(NamedTuple):
     def __add__(self, other: 'Point') -> 'Point':
         return Point(self.x + other.x, self.y + other.y)
 
+    def __sub__(self, other: 'Point') -> 'Point':
+        return Point(self.x - other.x, self.y - other.y)
+
     def __mul__(self, other: float) -> 'Point':
         return Point(self.x * other, self.y * other)
 
+    # def __div__(self, other: float) -> 'Point':
+    #     return Point(self.x / other, self.y / other)
+
     def __abs__(self) -> float:
         return sqrt(self.x * self.x + self.y * self.y)
+
+    # def __invert__(self):
+    #     """ Get the direction of the point through the bitwise invert operator
+    #
+    #         p: Point
+    #         ~p = p / abs(p)
+    #     """
+    #     return self.__div__(self.__abs__())
 
 
 class DiagramElement:
@@ -182,7 +196,7 @@ class LifeLine(DiagramElement):
         self.trace_diagram = trace_diagram
         trace_diagram.life_lines.append(self)
         self.head = Head(self, tags)
-        self.foot = Foot(self)
+        self.foot = Foot(self, tags)
         self.spine = Spine(self)
         self.vertices = list()
         self.activations = list()
@@ -225,8 +239,9 @@ class Foot(DiagramElement):
         If there is a Destruction shape on the life-line, the foot must be
         placed below it.
     """
-    def __init__(self, life_line: LifeLine):
+    def __init__(self, life_line: LifeLine, tags: TagDict):
         self.life_line = life_line
+        self.tags = tags
 
 
 class _LineLikeElement(DiagramElement):
