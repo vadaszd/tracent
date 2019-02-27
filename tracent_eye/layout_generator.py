@@ -9,7 +9,7 @@ from .trace_diagram import (
 class LayoutGenerator(DiagramVisitor):
 
     life_line_displacement = Point(150, 0)  # displacement between life lines
-    origin_displacement = Point(0, 10)
+    origin_displacement = Point(0, 30)
     directed_scale: Point
     last_vertex_by_life_line: Dict[LifeLine, Vertex]
 
