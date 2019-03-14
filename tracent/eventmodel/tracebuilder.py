@@ -179,6 +179,9 @@ class SimpleTraceBuilder(AbstractTraceBuilder):
         event_pdu.status = status
 
         for causing_context in causes:
+            if not isinstance(causing_context , EventReference):
+                raise TypeError("Expected Iterable[EventReference], got {}"
+                                .format(causes))
             event_reference_pdu = event_pdu.causing_events.add()
 
             if causing_context.trace_id.bytes != trace_fragment_pdu.trace_id:

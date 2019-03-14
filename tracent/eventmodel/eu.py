@@ -29,12 +29,12 @@ class ExecutionUnit(object):
         self.id = struct.pack("Q", random.getrandbits(64))
         self.event_sequence_number = -1   # This value is used nowhere
         self.next_event_sequence_number = 0
+        self.trace_id = uuid1()
         self._generate_next_event_ref = self._init_event_numbering()
         self._generate_next_event_ref()
         self.event_tags = dict()
         self.trace_builder = trace_builder
         self.trace_builder.start_eu(self.id, eu_type, tags)
-        self.trace_id = uuid1()
         self.trace_builder.start_trace(self.id, self.trace_id)
 
         self.trace_builder.add_event(

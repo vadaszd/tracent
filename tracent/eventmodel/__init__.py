@@ -34,6 +34,9 @@ class Tracent(object):
     ConcreteThreadingModel = TypeVar('ConcreteThreadingModel',
                                      bound=ConcurrencyModel)
 
+    ConcreteTraceBuilder = TypeVar('ConcreteTraceBuilder',
+                                   bound=_TraceBuilder)
+
     _reporter:  _Reporter
     _traceBuilder: Optional[_TraceBuilder]
     _concurrency_model_class: Type[ConcurrencyModel]
@@ -50,6 +53,8 @@ class Tracent(object):
 
     @property
     def my_eu_id(self) -> bytes:
+        if self._threading_model is None:
+            raise ValueError("call start_tracing(...) to initialize Tracent")
         return self._threading_model.get_eu().id
 
     def set_threading_model(self,
@@ -62,8 +67,11 @@ class Tracent(object):
         self._reporter = reporter
         return self
 
-    def start_tracing(self) -> None:
-        self._traceBuilder = _SimpleTraceBuilder(self._reporter)
+    def start_tracing(
+            self,
+            trace_builder_class: Type[ConcreteTraceBuilder] = _SimpleTraceBuilder
+    ) -> None:
+        self._traceBuilder = trace_builder_class(self._reporter)
         self._threading_model = self._concurrency_model_class(
             self._traceBuilder
         )

@@ -6,11 +6,13 @@ from textwrap import dedent
 
 from typing import List
 
-from google.protobuf.json_format import MessageToJson
+# noinspection PyPackageRequirements
 from google.protobuf.text_format import MessageToString
 
-from tracent.eventmodel import (setTraceBuilder, ExecutionUnit,
-                                SimpleTraceBuilder, AbstractReporter)
+from tracent.eventmodel.eu import ExecutionUnit
+from tracent.eventmodel.reporter import AbstractReporter
+from tracent.eventmodel.tracebuilder import SimpleTraceBuilder
+
 from tracent.oob import tracent_pb2 as pb
 
 
@@ -32,15 +34,16 @@ class InMemoryReporter(AbstractReporter):
         self.items: List[str] = list()
 
     def send(self, routing_key: bytes, serialized_tracing_data: bytes) -> None:
-        self.items.append(self._toText(serialized_tracing_data))
+        self.items.append(self._to_text(serialized_tracing_data))
         # print ("Sent to '{}': \n{}"
-        #        .format(UUID(bytes=routing_key).hex, self._toText(serialized_tracing_data)))
+        #        .format(UUID(bytes=routing_key).hex, self._to_text(serialized_tracing_data)))
 
     def broadcast(self, serialized_tracing_data: bytes) -> None:
-        self.items.append(self._toText(serialized_tracing_data))
-        # print ("Broadcast: \n{}".format(self._toText(serialized_tracing_data)))
+        self.items.append(self._to_text(serialized_tracing_data))
+        # print ("Broadcast: \n{}".format(self._to_text(serialized_tracing_data)))
 
-    def _toText(self,  serialized_tracing_data: bytes) -> str:
+    @staticmethod
+    def _to_text(serialized_tracing_data: bytes) -> str:
         tracing_data_pdu = pb.TracingData()
         tracing_data_pdu.ParseFromString(serialized_tracing_data)
         return MessageToString(tracing_data_pdu)
@@ -50,16 +53,16 @@ class TestEU(unittest.TestCase):
 
     def setUp(self) -> None:
         self.reporter = InMemoryReporter()
-        setTraceBuilder(SimpleTraceBuilder(self.reporter))
+        self.trace_builder = SimpleTraceBuilder(self.reporter)
 
     def testCreateAndDestroyEU(self) -> None:
-        eu = ExecutionUnit(pb.ExecutionUnit.PROCESS,
+        eu = ExecutionUnit(self.trace_builder, pb.ExecutionUnit.PROCESS,
                            tagBoolean=True, tagInt=123,
                            tagFloat=3.14, tagString="String tag",
                            tagBytes=b"bytes tag 7")
         eu.finish()
         # FIXME: order of strings is non-deterministic
-        expectedBroadcast = dedent("""\
+        expected_broadcast = dedent("""\
             broadcast_data {
               strings {
                 alias: 3191348081
@@ -83,7 +86,7 @@ class TestEU(unittest.TestCase):
               }
             }
             """)
-        expectedRouted = dedent("""\
+        expected_routed = dedent("""\
             routing_key: ".+"
             routed_data {
               trace_fragments {
@@ -133,26 +136,32 @@ class TestEU(unittest.TestCase):
               }
             }
             """)
-        actualBroadcast = dedent(self.reporter.items[0])
-        assert actualBroadcast == expectedBroadcast, actualBroadcast
-        actualRouted = self.reporter.items[1]
-        assert re.match(expectedRouted, actualRouted), actualRouted
+        actual_broadcast = dedent(self.reporter.items[0])
+        assert actual_broadcast == expected_broadcast, actual_broadcast
+        actual_routed = self.reporter.items[1]
+        assert re.match(expected_routed, actual_routed), actual_routed
 
     def testCrossEuTrace(self) -> None:
-        eu1 = ExecutionUnit(pb.ExecutionUnit.PROCESS)
-        eu2 = ExecutionUnit(pb.ExecutionUnit.PROCESS)
+        eu1 = ExecutionUnit(self.trace_builder, pb.ExecutionUnit.PROCESS)
+        eu2 = ExecutionUnit(self.trace_builder, pb.ExecutionUnit.PROCESS)
 
-        eu1.start_new_trace()
-        eu1.trace_point(pb.Event.OT_START_SPAN, pb.Event.BUSY)
-
+        eu1.trace_point(trace_id=None,
+                        event_type=pb.Event.OT_START_SPAN,
+                        status=pb.Event.BUSY
+                        )
+        trace_id = eu1.trace_id
         # This is not the intended way of using peek(). Our goal here is
         # to test peek() looks ahead correctly
-        traceContext = eu1.peek()
-        eu1.trace_point(pb.Event.OT_FINISH_SPAN, pb.Event.IDLE)
-        assert traceContext == eu1.get_trace_context()
+        event_reference = eu1.peek()
+        eu1.trace_point(trace_id=eu1.trace_id,  # continue the trace
+                        event_type=pb.Event.OT_FINISH_SPAN,
+                        status=pb.Event.IDLE)
+        assert event_reference == eu1.get_trace_context()
 
-        eu2.trace_point(pb.Event.OT_START_SPAN, pb.Event.BUSY,
-                       causing_context=eu1.get_trace_context())
+        eu2.trace_point(trace_id=eu1.trace_id,  # continue the trace
+                        event_type=pb.Event.OT_START_SPAN,
+                        status=pb.Event.BUSY,
+                        causes=[eu1.get_trace_context()])
 
         # The correct use case for peek(): model a blocking send operation
         # The context returned by peek() refers to the send event that is
@@ -160,18 +169,26 @@ class TestEU(unittest.TestCase):
         # needs to be injected into the msg, which will be transmitted
         # in a blocking operation. That means the send event will only be
         # created after that operation completed.
-        ctxOfSend = eu2.peek()
+        send_event = eu2.peek()
         # The receive event; it will refer to the send event
-        eu1.trace_point(pb.Event.OT_START_SPAN, pb.Event.BUSY,
-                       causing_context=ctxOfSend)
+        eu1.trace_point(trace_id=trace_id,  # continue the trace
+                        event_type=pb.Event.OT_START_SPAN,
+                        status=pb.Event.BUSY,
+                        causes=[send_event])
         # The send event
-        eu2.trace_point(pb.Event.OT_FINISH_SPAN, pb.Event.IDLE)
+        eu2.trace_point(trace_id=trace_id,  # continue the trace
+                        event_type=pb.Event.OT_FINISH_SPAN,
+                        status=pb.Event.IDLE
+                        )
 
-        eu1.trace_point(pb.Event.OT_FINISH_SPAN, pb.Event.IDLE,
+        eu1.trace_point(trace_id=trace_id,  # continue the trace
+                        event_type=pb.Event.OT_FINISH_SPAN,
+                        status=pb.Event.IDLE,
                        )
         eu2.finish()
         eu1.finish()
-        pprint (self.reporter.items)
+        pprint([str(item) for item in self.reporter.items])
+
 
 if __name__ == '__main__':
     unittest.main()
