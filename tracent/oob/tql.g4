@@ -1,11 +1,29 @@
 grammar tql;
 
+sequence
+    : eu_declaration_list
+      NEWLINE
+      interaction *
+      SEMICOLON
+    ;
+
+interaction
+    : event_list NEWLINE
+    ;
+
+eu_declaration_list
+    : eu_decl  //+
+    ;
+
+event_list
+    : event //+
+    ;
+
 eu_decl
     :               LBRACKET
       eu_type=      IDENTIFIER?
       var_name=     declarable_identifier
                     tags?
-                    event*
                     RBRACKET
     ;
 
@@ -26,11 +44,11 @@ right_value
     ;
 
 event
-    :               ASTEERISK
+    :               ASTERISK
       var_name=     declarable_identifier
-                    (PIPE event_type=right_value)
-                    (PER status=right_value)
-                    tags
+                    (COLON event_type=IDENTIFIER)?
+                    (PER status=IDENTIFIER)?
+                    tags?
     ;
 
 declarable_identifier
@@ -41,6 +59,26 @@ declarable_identifier
 identifier_declaration
     : BANG
       IDENTIFIER
+    ;
+
+literal
+    : FLOAT
+    | INTEGER
+    | STRING
+    ;
+
+FLOAT
+    : [0-9]+[.][0-9]*
+    ;
+
+INTEGER
+    : [0-9]+
+    ;
+
+STRING
+    : '"'
+      ((~["\\\r\n])|('\\' ["\\nr]))*
+      '"'
     ;
 
 IDENTIFIER
@@ -57,6 +95,10 @@ Digit
 fragment
 IdentifierNondigit
     :   [a-zA-Z_]
+    ;
+
+ASTERISK
+    : '*'
     ;
 
 LPAREN
@@ -92,6 +134,10 @@ COLON
     : ':'
     ;
 
+SEMICOLON
+    : ';'
+    ;
+
 PIPE
     : '|'
 
@@ -102,4 +148,13 @@ PER
 
 BANG
     : '!'
+    ;
+
+NEWLINE
+    : '\n'
+    ;
+
+Whitespace
+    :   [ \t]+
+        -> skip
     ;

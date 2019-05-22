@@ -1,0 +1,101 @@
+pattern p1 (a: eu, b: eu_type, c: trace)
+{
+
+[ DU mux1! (hostname="zeus", f=2)]
+[ DU mux2! (hostname="zeus", f=2)]
+
+* event1! : dataIn/running (msgId=aMsgId!)
+* event2! : dataIn/running (msgId=aMsgId )
+
+    [ mux1 ]              [mux2]        [mux3!]
+event1 |------------------->| event2      |
+       |            event3! |------------>| event4!
+  e10! |<-------------------+-------------| e9!
+  e11! |--------------------+------------>| e12!
+       |            event6! |<------------| event5!
+event8 |<-------------------| event7      |
+
+[ mux1 ]
+    * event10
+    :           // any number of non-interesting events in between
+    * event11
+
+
+}
+
+// Structure a trace by grouping events with the same tag value
+structure trx ()
+{
+    same trxNb
+
+    structure msg (qr: QR)
+    {
+        same msgId
+
+        structure hop (duType: DuType, qr: QR)
+        {
+            [ DU du! (duType=duType)]
+                * dataIn!  : dataIn/running ()
+                * session! : dataIn/running (qr=qr)
+                * dataOut! : dataIn/running ()
+        }
+
+        mux = hop("mux", qr)
+        srv = ? hop("srv", qr)
+    }
+
+    query = msg("query")
+    reply = msg("reply")
+
+    same parentTrxNb as this trxNb
+
+    children = * Hop()
+}
+
+
+// Structure a trace by grouping events with the same tag value
+pattern trx ()
+{
+    same trxNb
+
+    pattern msg (qr: QR)
+    {
+        pattern hop (duType: DuType, qr: QR)
+        {
+            [ DU du! (duType=duType)]
+                * dataIn!  : dataIn/running ()
+                * session! : dataIn/running (qr=qr)
+                * dataOut! : dataIn/running ()
+        }
+
+        mux = hop("mux", qr)
+        srv = ? hop("srv", qr)
+    }
+
+    query = msg("query")
+    reply = msg("reply")
+
+    query.mux.dataOut |-->| query.srv.dataIn
+    reply.mux.dataIn  |<--| reply.srv.dataOut
+    }
+
+    same parentTrxNb as this trxNb
+
+    children = * Hop()
+}
+
+
+
+        [ mux ]              [ srv ]            [obe]
+muxDataInQ *                    |                 |
+ muxQuery  *                    |                 |
+muxDataOutQ|------------------->| srvDataInQ      |
+           |          srvQueryQ *                 |
+           |        srvDataOutQ |---------------->| obeIn
+           :                    :                 :
+           |         srvDataInR |<----------------| obeOut
+           |           srvReply *
+muxDataInR |<-------------------| srvDataOutR
+ muxReply  *                    |
+muxDataOutR*                    |
+
